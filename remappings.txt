@@ -1,0 +1,5 @@
+create3-factory/=lib/create3-factory/
+ds-test/=lib/forge-std/lib/ds-test/src/
+forge-std/=lib/forge-std/src/
+solady/=lib/solady/
+solmate/=lib/solmate/src/

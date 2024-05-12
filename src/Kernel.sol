@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.24;
+
+import {ERC1967Factory} from "solady/src/utils/ERC1967Factory.sol";
 
 /// @notice Actions to trigger state changes in the kernel. Passed by the executor
 enum Actions {
@@ -17,7 +19,7 @@ struct Instruction {
     address target;
 }
 
-/// @notice Used to define which module functions a policy needs access to
+/// @notice Used to define which functions a component needs access to
 struct Permissions {
     bytes32 label;
     bytes4 funcSelector;
@@ -32,31 +34,57 @@ abstract contract Component {
     }
 
     modifier permissioned() {
-        //if (
-        //msg.sender == address(kernel) ||
-        //!kernel.modulePermissions(KEYCODE(), Policy(msg.sender), msg.sig)
-        //) revert Module_PolicyNotPermitted(msg.sender);
+        if (msg.sender == address(kernel) ||
+            !kernel.permissions(NAME(), Component(msg.sender), msg.sig)
+        ) revert Component_NotPermitted(msg.sender);
         _;
     }
 
-    function LABEL() public view virtual returns (bytes32) {
-        return bytes32(abi.encodePacked(type(this).name));
+    // TODO virtual?
+    function NAME() public view virtul returns (bytes32) {
+        return bytes32(abi.encodePacked(type(Component).name));
     }
 
-    // TODO CONFIGS or READS or configureDependencies?
-    function READS() external virtual returns (bytes32[] memory dependencies) {}
+    // Hook for defining which components to read from
+    function READ() external virtual returns (bytes32[] memory reads) {}
 
-    // TODO REQUESTS or WRITES or requestPermissions?
-    function WRITES()
+    // Hook for defining which functions to request write access to
+    function WRITE()
         external
         virtual
-        returns (Permissions[] memory requests)
+        returns (Permissions[] memory writes)
     {}
+
+    function INIT() external onlyKernel {
+        _init();
+    }
+
+    function _init() internal virtual {}
+
+    // ERC-165. Used by Kernel to check if a component is installable.
+    function supportsInterface(bytes4 interfaceId_) external view virtual returns (bool) {
+        return
+            type(Component).interfaceId == interfaceId_ ||
+            super.supportsInteface(interfaceId_);
+    }
 }
 
 // TODO make upgradeable via kernel action. Needs 1967 factory
-abstract contract MutableComponent is Component {
+abstract contract MutableComponent is Component {}
 
+// TODO make clonable components
+abstract contract ReplicableComponent is Component {
+    function REPLICATE() external virtual;
 }
 
-contract Kernel {}
+// TODO what does this need
+abstract contract Script is Component {
+    function run() external virtual;
+}
+
+contract Kernel is ERC1967Factory {
+
+    address public executor;
+
+    mapping(bytes32 => address) public components;
+}
