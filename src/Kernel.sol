@@ -3,11 +3,14 @@ pragma solidity ^0.8.24;
 
 import {UUPSUpgradeable} from "solady/src/utils/UUPSUpgradeable.sol";
 import {ERC1967Factory} from "solady/src/utils/ERC1967Factory.sol";
+import {Initializable} from "solady/src/utils/Initializable.sol";
 import {LibClone} from "solady/src/utils/LibClone.sol";
+import {LibDAG} from "./LibDAG.sol";
 
 /// @notice Actions to trigger state changes in the kernel. Passed by the executor
 enum Actions {
     INSTALL,
+    INSTALL_MUT,
     UNINSTALL,
     UPGRADE,
     RUN_SCRIPT,
@@ -33,8 +36,8 @@ abstract contract Component {
 
     error Component_NotKernel(address sender_);
 
-    constructor(Kernel kernel_) {
-        kernel = kernel_;
+    constructor(address kernel_) {
+        kernel = Kernel(kernel_);
     }
 
     modifier onlyKernel() {
@@ -53,21 +56,24 @@ abstract contract Component {
         return type(Component).name;
     }
 
-    // Hook for defining which components to read from
-    function READ() external virtual returns (bytes32[] memory reads) {}
-
-    // Hook for defining which functions to request write access to
-    function WRITE()
-        external
-        virtual
-        returns (Permissions[] memory writes)
-    {}
-
-    function INIT() external onlyKernel {
-        _init();
+    function ACTIVE() external virtual returns (bool) {
+        return kernel.isComponentActive(this);
     }
 
-    function _init() internal virtual {}
+    // Hook for defining which components to read from
+    function READ() external virtual returns (bytes32[] memory reads);
+
+    // Hook for defining which functions to request write access to
+    function WRITE() external virtual returns (Permissions[] memory writes);
+
+    // Hook for defining which functions can be routed through the kernel
+    function ENDPOINTS() external virtual returns (bytes4[] memory endpoints_);
+
+    function INIT(bytes memory encodedArgs_) external onlyKernel {
+        _init(encodedArgs_);
+    }
+
+    function _init(bytes memory encodedArgs_) internal virtual;
 
     /// @notice Function used by kernel when migrating to a new kernel.
     function changeKernel(Kernel newKernel_) external onlyKernel {
@@ -77,29 +83,34 @@ abstract contract Component {
     // ERC-165. Used by Kernel to check if a component is installable.
     // TODO add interface for Modules and Policies?? to allow change kernel to work
     function supportsInterface(bytes4 interfaceId_) external view virtual returns (bool) {
-        return
-            type(Component).interfaceId == interfaceId_ ||
+        return type(Component).interfaceId == interfaceId_ ||
             super.supportsInteface(interfaceId_);
     }
 }
 
-// TODO make upgrades via kernel action. Needs 1967 factory
-abstract contract MutableComponent is Component, UUPSUpgradeable {}
+// TODO make upgrades via kernel action. Uses transparent proxy pattern.
+// TODO should be UUPS?
+//      - if so, this contract needs to
+// TODO needs ERC1967Factory to be able to upgrade
+abstract contract MutableComponent is Component, Initializable {
+    // TODO bool to indicate if component is mutable
+    function isMutable() external pure returns (bool) {
+        return true;
+    }
 
-// TODO make clonable components
-abstract contract ReplicableComponent is Component {
-    function REPLICATE() external virtual;
-}
-
-// TODO what does this need
-abstract contract Script is Component {
-    function run() external virtual;
+    // TODO make sure this works
+    // Special INIT function for upgradeable that can only be called once
+    function INIT(bytes memory encodedArgs_) internal override onlyInitializing onlyKernel {
+        super._init(encodedArgs_);
+    }
 }
 
 contract Kernel is ERC1967Factory {
+    using LibDAG for LibDAG.DAG;
 
     address public executor;
 
+    LibDAG.DAG private componentDag;
     mapping(bytes32 => Component) public getComponentForName;
     mapping(Component => bytes32) public getNameForComponent;
 
@@ -112,6 +123,8 @@ contract Kernel is ERC1967Factory {
 
     constructor() {
         executor = msg.sender;
+        admin = msg.sender;
+        componentDag.init();
     }
 
     modifier verifyComponent(address target_) internal {
@@ -124,9 +137,10 @@ contract Kernel is ERC1967Factory {
         require(msg.sender == executor);
 
         if      (action_ == Actions.INSTALL)     _installComponent(target_);
+        else if (action_ == Actions.INSTALL_MUT) _installMutableComponent(target_);
         else if (action_ == Actions.UNINSTALL)   _uninstallComponent(target_);
         else if (action_ == Actions.UPGRADE)     _upgradeComponent(target_);
-        else if (action_ == Actions.CHANGE_EXEC) executor = target_;
+        else if (action_ == Actions.CHANGE_EXEC) _changeExecutor(target_);
         else if (action_ == Actions.MIGRATE)     _migrateKernel(Kernel(target_));
 
         emit ActionExecuted(action_, target_);
@@ -146,6 +160,21 @@ contract Kernel is ERC1967Factory {
         component.INIT();
     }
 
+    // TODO takes implementation contract and deploys proxy for it, and records proxy
+    function _installMutableComponent(address target_) internal verifyComponent(target_) {
+        MutableComponent component = MutableComponent(target_);
+        if (!component.isMutable()) revert Kernel_CannotInstall();
+
+        components[component.NAME()] = component;
+
+        // TODO get READs and WRITEs
+        // TODO check for cycles
+        // TODO add dependencies
+        // TODO add permissions
+
+        component.INIT();
+    }
+
     function _uninstallComponent(address target_) internal verifyComponent(target_) {
         Component component = Component(target_);
 
@@ -155,10 +184,41 @@ contract Kernel is ERC1967Factory {
         // TODO check if dependency to anything. If so, revert
     }
 
-    function _upgradeComponent(address target_) internal verifyComponent(target_) {}
+    // TODO call `upgradeAndCall` on the target and its INIT function
+    function _upgradeComponent(address target_, bytes calldata encodedArgs_) internal verifyComponent(target_) {
+        Component component = Component(target_);
+
+        if (components[component.NAME()] == address(0)) revert Kernel_NotInstalled;
+        components[component.NAME()] = component;
+
+        // TODO get READs and WRITEs
+        // TODO check for cycles
+        // TODO add dependencies
+        // TODO add permissions
+
+        // TODO call `upgradeAndCall` on the traget and its INIT function
+        upgradeAndCall(
+            target_,
+            abi.encodeWithSelector(Component.INIT.selector),
+            encodedArgs_
+        );
+
+        // Emit
+    }
+
+    function _runScript(address target_) internal {
+        // TODO
+    }
+
+    function _changeExecutor(address target_) internal {
+        executor = target_;
+        admin = target_;
+    }
+
     function _migrateKernel(address target_) internal {}
 
     // TODO Add dynamic routing to components
     // TODO allow router to load data into transient memory before routing
+    // TODO add multicall/batchable
 
 }
