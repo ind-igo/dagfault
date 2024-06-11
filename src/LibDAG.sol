@@ -6,14 +6,13 @@ library LibDAG {
     struct Node {
         uint id;
         string data;
+        uint[] outgoingEdges;
+        uint inDegree;
     }
 
     struct DAG {
         mapping(uint => Node) nodes;
         mapping(uint => mapping(uint => bool)) edges;
-        mapping(uint => uint[]) outgoingEdges;
-        mapping(uint => uint) inDegree;
-        mapping(uint => bool) nodeExists;
         uint nodeCount;
     }
 
@@ -22,16 +21,20 @@ library LibDAG {
     error AddingEdgeCreatesCycle(uint from, uint to);
 
     function addNode(DAG storage self, string memory data) internal {
-        self.nodes[self.nodeCount] = Node(self.nodeCount, data);
-        self.nodeExists[self.nodeCount] = true;
+        self.nodes[self.nodeCount] = Node({
+            id: self.nodeCount,
+            data: data,
+            outgoingEdges: new uint ,
+            inDegree: 0
+        });
         self.nodeCount++;
     }
 
     function addEdge(DAG storage self, uint from, uint to) internal {
-        if (!self.nodeExists[from]) {
+        if (bytes(self.nodes[from].data).length == 0) {
             revert NodeDoesNotExist(from);
         }
-        if (!self.nodeExists[to]) {
+        if (bytes(self.nodes[to].data).length == 0) {
             revert NodeDoesNotExist(to);
         }
         if (self.edges[from][to]) {
@@ -42,37 +45,35 @@ library LibDAG {
         }
 
         self.edges[from][to] = true;
-        self.outgoingEdges[from].push(to);
-        self.inDegree[to]++;
+        self.nodes[from].outgoingEdges.push(to);
+        self.nodes[to].inDegree++;
     }
 
     function removeNode(DAG storage self, uint id) internal {
-        if (!self.nodeExists[id]) {
+        if (bytes(self.nodes[id].data).length == 0) {
             revert NodeDoesNotExist(id);
         }
 
         // Remove all outgoing edges from the node
-        uint[] memory outgoing = self.outgoingEdges[id];
+        uint[] memory outgoing = self.nodes[id].outgoingEdges;
         for (uint i = 0; i < outgoing.length; i++) {
             uint to = outgoing[i];
-            self.inDegree[to]--;
+            self.nodes[to].inDegree--;
             delete self.edges[id][to];
         }
-        delete self.outgoingEdges[id];
 
         // Remove all incoming edges to the node
         for (uint i = 0; i < self.nodeCount; i++) {
-            if (i != id && self.nodeExists[i]) {
+            if (i != id && bytes(self.nodes[i].data).length != 0) {
                 if (self.edges[i][id]) {
                     self.edges[i][id] = false;
-                    self.inDegree[id]--;
+                    self.nodes[id].inDegree--;
                 }
             }
         }
 
         // Remove the node itself
         delete self.nodes[id];
-        delete self.nodeExists[id];
     }
 
     function hasCycle(DAG storage self, uint from, uint to) internal view returns (bool) {
@@ -97,7 +98,7 @@ library LibDAG {
             if (!visited[current]) {
                 visited[current] = true;
 
-                uint[] memory neighbors = self.outgoingEdges[current];
+                uint[] memory neighbors = self.nodes[current].outgoingEdges;
                 for (uint i = 0; i < neighbors.length; i++) {
                     uint neighbor = neighbors[i];
                     if (!visited[neighbor]) {
@@ -111,31 +112,31 @@ library LibDAG {
     }
 
     function getNode(DAG storage self, uint id) internal view returns (Node memory) {
-        if (!self.nodeExists[id]) {
+        if (bytes(self.nodes[id].data).length == 0) {
             revert NodeDoesNotExist(id);
         }
         return self.nodes[id];
     }
 
     function getEdges(DAG storage self, uint id) internal view returns (uint[] memory) {
-        if (!self.nodeExists[id]) {
+        if (bytes(self.nodes[id].data).length == 0) {
             revert NodeDoesNotExist(id);
         }
-        return self.outgoingEdges[id];
+        return self.nodes[id].outgoingEdges;
     }
 
     function getInDegree(DAG storage self, uint id) internal view returns (uint) {
-        if (!self.nodeExists[id]) {
+        if (bytes(self.nodes[id].data).length == 0) {
             revert NodeDoesNotExist(id);
         }
-        return self.inDegree[id];
+        return self.nodes[id].inDegree;
     }
 
     function hasEdge(DAG storage self, uint from, uint to) internal view returns (bool) {
-        if (!self.nodeExists[from]) {
+        if (bytes(self.nodes[from].data).length == 0) {
             revert NodeDoesNotExist(from);
         }
-        if (!self.nodeExists[to]) {
+        if (bytes(self.nodes[to].data).length == 0) {
             revert NodeDoesNotExist(to);
         }
         return self.edges[from][to];
