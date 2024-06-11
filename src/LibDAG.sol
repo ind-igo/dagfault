@@ -1,40 +1,32 @@
-// SPX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+// SPDX-License-Identifier: MIT
+pragma solidity >=0.8.4;
 
+// TODO fail gracefully instead of reverting everywhere
 library LibDAG {
-
     struct Node {
-        uint id;
-        string data;
         uint[] outgoingEdges;
         uint inDegree;
+        bool exists;
     }
 
     struct DAG {
-        mapping(uint => Node) nodes;
-        mapping(uint => mapping(uint => bool)) edges;
-        uint nodeCount;
+        mapping(bytes32 => Node) nodes;
+        mapping(bytes32 => mapping(bytes32 => bool)) edges;
     }
 
-    error NodeDoesNotExist(uint id);
-    error EdgeAlreadyExists(uint from, uint to);
-    error AddingEdgeCreatesCycle(uint from, uint to);
+    error NodeDoesNotExist(bytes32 id);
+    error EdgeAlreadyExists(bytes32 from, bytes32 to);
+    error AddingEdgeCreatesCycle(bytes32 from, bytes32 to);
 
-    function addNode(DAG storage self, string memory data) internal {
-        self.nodes[self.nodeCount] = Node({
-            id: self.nodeCount,
-            data: data,
-            outgoingEdges: new uint ,
-            inDegree: 0
-        });
-        self.nodeCount++;
+    function addNode(DAG storage self, bytes32 id) internal {
+        self.nodes[id].exists = true; // Set node existence flag to true
     }
 
-    function addEdge(DAG storage self, uint from, uint to) internal {
-        if (bytes(self.nodes[from].data).length == 0) {
+    function addEdge(DAG storage self, bytes32 from, bytes32 to) internal {
+        if (!self.nodes[from].exists) {
             revert NodeDoesNotExist(from);
         }
-        if (bytes(self.nodes[to].data).length == 0) {
+        if (!self.nodes[to].exists) {
             revert NodeDoesNotExist(to);
         }
         if (self.edges[from][to]) {
@@ -45,30 +37,29 @@ library LibDAG {
         }
 
         self.edges[from][to] = true;
-        self.nodes[from].outgoingEdges.push(to);
+        self.nodes[from].outgoingEdges.push(uint256(to));
         self.nodes[to].inDegree++;
     }
 
-    function removeNode(DAG storage self, uint id) internal {
-        if (bytes(self.nodes[id].data).length == 0) {
+    function removeNode(DAG storage self, bytes32 id) internal {
+        if (!self.nodes[id].exists) {
             revert NodeDoesNotExist(id);
         }
 
         // Remove all outgoing edges from the node
         uint[] memory outgoing = self.nodes[id].outgoingEdges;
         for (uint i = 0; i < outgoing.length; i++) {
-            uint to = outgoing[i];
+            bytes32 to = bytes32(outgoing[i]);
             self.nodes[to].inDegree--;
             delete self.edges[id][to];
         }
 
         // Remove all incoming edges to the node
-        for (uint i = 0; i < self.nodeCount; i++) {
-            if (i != id && bytes(self.nodes[i].data).length != 0) {
-                if (self.edges[i][id]) {
-                    self.edges[i][id] = false;
-                    self.nodes[id].inDegree--;
-                }
+        for (uint i = 0; i < self.nodes[id].outgoingEdges.length; i++) {
+            bytes32 from = bytes32(self.nodes[id].outgoingEdges[i]);
+            if (self.edges[from][id]) {
+                self.edges[from][id] = false;
+                self.nodes[id].inDegree--;
             }
         }
 
@@ -76,20 +67,20 @@ library LibDAG {
         delete self.nodes[id];
     }
 
-    function hasCycle(DAG storage self, uint from, uint to) internal view returns (bool) {
+    function hasCycle(DAG storage self, bytes32 from, bytes32 to) internal view returns (bool) {
         if (from == to) {
             return true;
         }
 
-        uint nodeCount = self.nodeCount;
-        bool[] memory visited = new bool[](nodeCount);
-        uint[] memory stack = new uint[](nodeCount);
+        mapping(bytes32 => Node) storage nodes = self.nodes;
+        mapping(bytes32 => bool) storage visited;
+        bytes32[] memory stack = new bytes32[](nodes.length);
         uint stackSize = 0;
 
         stack[stackSize++] = to;
 
         while (stackSize > 0) {
-            uint current = stack[--stackSize];
+            bytes32 current = stack[--stackSize];
 
             if (current == from) {
                 return true;
@@ -98,9 +89,9 @@ library LibDAG {
             if (!visited[current]) {
                 visited[current] = true;
 
-                uint[] memory neighbors = self.nodes[current].outgoingEdges;
+                uint[] memory neighbors = nodes[current].outgoingEdges;
                 for (uint i = 0; i < neighbors.length; i++) {
-                    uint neighbor = neighbors[i];
+                    bytes32 neighbor = bytes32(neighbors[i]);
                     if (!visited[neighbor]) {
                         stack[stackSize++] = neighbor;
                     }
@@ -111,32 +102,32 @@ library LibDAG {
         return false;
     }
 
-    function getNode(DAG storage self, uint id) internal view returns (Node memory) {
-        if (bytes(self.nodes[id].data).length == 0) {
+    function getNode(DAG storage self, bytes32 id) internal view returns (Node memory) {
+        if (!self.nodes[id].exists) {
             revert NodeDoesNotExist(id);
         }
         return self.nodes[id];
     }
 
-    function getEdges(DAG storage self, uint id) internal view returns (uint[] memory) {
-        if (bytes(self.nodes[id].data).length == 0) {
+    function getEdges(DAG storage self, bytes32 id) internal view returns (uint[] memory) {
+        if (!self.nodes[id].exists) {
             revert NodeDoesNotExist(id);
         }
         return self.nodes[id].outgoingEdges;
     }
 
-    function getInDegree(DAG storage self, uint id) internal view returns (uint) {
-        if (bytes(self.nodes[id].data).length == 0) {
+    function getInDegree(DAG storage self, bytes32 id) internal view returns (uint) {
+        if (!self.nodes[id].exists) {
             revert NodeDoesNotExist(id);
         }
         return self.nodes[id].inDegree;
     }
 
-    function hasEdge(DAG storage self, uint from, uint to) internal view returns (bool) {
-        if (bytes(self.nodes[from].data).length == 0) {
+    function hasEdge(DAG storage self, bytes32 from, bytes32 to) internal view returns (bool) {
+        if (!self.nodes[from].exists) {
             revert NodeDoesNotExist(from);
         }
-        if (bytes(self.nodes[to].data).length == 0) {
+        if (!self.nodes[to].exists) {
             revert NodeDoesNotExist(to);
         }
         return self.edges[from][to];

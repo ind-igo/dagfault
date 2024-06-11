@@ -7,34 +7,33 @@ import {Initializable} from "solady/src/utils/Initializable.sol";
 import {LibClone} from "solady/src/utils/LibClone.sol";
 import {LibDAG} from "./LibDAG.sol";
 
-/// @notice Actions to trigger state changes in the kernel. Passed by the executor
-enum Actions {
-    INSTALL,
-    INSTALL_MUT,
-    UNINSTALL,
-    UPGRADE,
-    RUN_SCRIPT,
-    CHANGE_EXEC,
-    MIGRATE
+/*
+function DEPS() external view returns (Dependency[] memory deps) {
+    deps = new Dependency[](2);
+    bytes4[2] memory poolMgrSelectors = [
+        BPOOL.addLiquidityTo.selector,
+        BPOOL.removeLiquidityFrom.selector
+    ];
+    deps.push(Dependency(PoolManager.NAME(), poolMgrSelectors);
+    deps.push(Dependency(TokenManager.NAME(), NO_SELECTORS);
 }
-
-/// @notice Used by executor to select an action and a target contract for a kernel action
-struct Instruction {
-    Actions action;
-    address target;
-}
-
-/// @notice Used to define which functions a component needs access to
-struct Permissions {
-    bytes32 label;
-    bytes4 funcSelector;
-}
+*/
 
 abstract contract Component {
+    struct Dependency {
+        bytes32 label;
+        bytes4[] funcSelector;
+    }
+
     Kernel public immutable kernel;
-    uint8 public version;
+    uint256 public ID;
+
+    mapping(Component => mapping(bytes4 => bool)) public permissions;
+
+    bytes4[] internal constant NO_SELECTORS;
 
     error Component_NotKernel(address sender_);
+    error Component_NotPermitted();
 
     constructor(address kernel_) {
         kernel = Kernel(kernel_);
@@ -46,25 +45,29 @@ abstract contract Component {
     }
 
     modifier permissioned() {
-        if (msg.sender == address(kernel) ||
-            !kernel.permissions(NAME(), Component(msg.sender), msg.sig)
-        ) revert Component_NotPermitted(msg.sender);
+        if (msg.sender != address(kernel) ||
+            !permissions[msg.sender][msg.sig]
+        ) revert Component_NotPermitted();
+        /*!kernel.permissions(LABEL(), Component(msg.sender), msg.sig)*/
         _;
     }
 
-    function NAME() public view virtual returns (bytes32) {
+    // Must be overriden to actual name of the component or else will fail on install
+    function LABEL() public view virtual returns (bytes32) {
         return type(Component).name;
     }
 
     function ACTIVE() external virtual returns (bool) {
-        return kernel.isComponentActive(this);
+        return kernel.isComponentActive(LABEL());
     }
 
+    function DEPS() external virtual returns (Dependency[] memory);
+
     // Hook for defining which components to read from
-    function READ() external virtual returns (bytes32[] memory reads);
+    function READS() external virtual returns (bytes32[] memory reads);
 
     // Hook for defining which functions to request write access to
-    function WRITE() external virtual returns (Permissions[] memory writes);
+    function WRITES() external virtual returns (Permissions[] memory writes);
 
     // Hook for defining which functions can be routed through the kernel
     function ENDPOINTS() external virtual returns (bytes4[] memory endpoints_);
@@ -73,11 +76,18 @@ abstract contract Component {
         _init(encodedArgs_);
     }
 
+    // Must be overridden to do custom initialization
     function _init(bytes memory encodedArgs_) internal virtual;
 
     /// @notice Function used by kernel when migrating to a new kernel.
     function changeKernel(Kernel newKernel_) external onlyKernel {
         kernel = newKernel_;
+    }
+
+    function setPermissions(address component_, bytes4[] memory selectors_, bool isAllowed_) external onlyKernel {
+        for (uint256 i; i < selectors_.length; i++) {
+            permissions[component_][selectors_[i]] = isAllowed_;
+        }
     }
 
     // ERC-165. Used by Kernel to check if a component is installable.
@@ -90,9 +100,12 @@ abstract contract Component {
 
 // TODO make upgrades via kernel action. Uses transparent proxy pattern.
 // TODO should be UUPS?
-//      - if so, this contract needs to
+//      - if so, this contract needs to inherit UUPSUpgradeable
 // TODO needs ERC1967Factory to be able to upgrade
 abstract contract MutableComponent is Component, Initializable {
+    // TODO think about versioning
+    /*uint8 public version;*/
+
     // TODO bool to indicate if component is mutable
     function isMutable() external pure returns (bool) {
         return true;
@@ -105,23 +118,43 @@ abstract contract MutableComponent is Component, Initializable {
     }
 }
 
+/// @notice Kernel contract that manages the installation and execution of components.
+/// @dev    Uses a DAG to manage dependencies and permissions between components
 contract Kernel is ERC1967Factory {
     using LibDAG for LibDAG.DAG;
 
+    /// @notice Actions to trigger state changes in the kernel. Passed by the executor
+    enum Actions {
+        INSTALL,
+        INSTALL_MUT,
+        UNINSTALL,
+        UPGRADE,
+        RUN_SCRIPT,
+        CHANGE_EXEC,
+        MIGRATE
+    }
+
+    /// @notice Used by executor to select an action and a target contract for a kernel action
+    struct Instruction {
+        Actions action;
+        address target;
+    }
+
     address public executor;
 
-    LibDAG.DAG private components;
+    LibDAG.DAG private componentGraph;
 
     mapping(uint256 => Component) public getComponentForId;
     mapping(bytes32 => Component) public getComponentForName;
     mapping(Component => bytes32) public getNameForComponent;
 
-    /// @notice Component <> Component Permissions.
-    /// @dev    Component -> Component -> Function Selector -> bool for permission
+    /// @notice Component <> Component permissions
+    /// @dev    Component -> Component -> function selector -> bool for permission
     mapping(Component => mapping(Component => mapping(bytes4 => bool))) public permissions;
 
     error Kernel_CannotInstall();
     error Kernel_NotInstalled();
+    error Kernel_InvalidConfig();
 
     constructor() {
         executor = msg.sender;
@@ -129,43 +162,62 @@ contract Kernel is ERC1967Factory {
         componentDag.init();
     }
 
+    // TODO add real error message
     modifier verifyComponent(address target_) internal {
         if (!Component(target_).supportsInterface(Component.interfaceId)) revert;
     }
 
     // TODO think about allowing other contracts to install components. ie, a factory
-    function executeAction(Actions action_, address target_) external {
+    function executeAction(Actions action_, address target_, bytes memory data_) external {
         // Only Executor can execute actions
         require(msg.sender == executor);
 
-        if      (action_ == Actions.INSTALL)     _installComponent(target_);
-        else if (action_ == Actions.INSTALL_MUT) _installMutableComponent(target_);
-        else if (action_ == Actions.UNINSTALL)   _uninstallComponent(target_);
-        else if (action_ == Actions.UPGRADE)     _upgradeComponent(target_);
+        if      (action_ == Actions.INSTALL)     _installComponent(target_, data_);
+        /*else if (action_ == Actions.INSTALL_MUT) _installMutableComponent(target_);*/
+        /*else if (action_ == Actions.UNINSTALL)   _uninstallComponent(target_);*/
+        /*else if (action_ == Actions.UPGRADE)     _upgradeComponent(target_);*/
         else if (action_ == Actions.CHANGE_EXEC) _changeExecutor(target_);
-        else if (action_ == Actions.MIGRATE)     _migrateKernel(Kernel(target_));
+        /*else if (action_ == Actions.MIGRATE)     _migrateKernel(Kernel(target_));*/
 
         emit ActionExecuted(action_, target_);
     }
 
-    function _installComponent(address target_) internal verifyComponent(target_) {
+    function _installComponent(address target_, bytes memory data_) internal verifyComponent(target_) {
         Component component = Component(target_);
 
-        if (components[components.NAME()] != address(0)) revert Kernel_CannotInstall();
-        components[component.NAME()] = component;
+        bytes32 label = component.LABEL();
+        if (componentGraph[label] != address(0)) revert Kernel_CannotInstall();
+        if (name != type(Component).name) revert Kernel_CannotInstall();
 
-        // TODO get READs and WRITEs
-        // TODO check for cycles
-        // TODO add dependencies
-        // TODO add permissions
+        // Add node to graph, which will make component active
+        componentGraph.addNode(name);
 
-        component.INIT();
+        // Add all read and write dependencies
+        Component.Dependency[] memory deps = component.DEPS();
+
+        for (uint256 i; i < deps.length; ++i) {
+            if(componentGraph.hasEdge(name, deps[i]))) revert Kernel_InvalidConfig();
+            Component dependency = getComponentForName[deps[i].name];
+
+            // Create edge between component and dependency
+            componentGraph.addEdge(name, reads[i]);
+
+            // Add permissions for any functions that need it
+            getComponentForName[reads[i]].setPermissions(component, deps[i].funcSelectors, true);
+
+            /*bytes4[] memory writes = deps[i].funcSelectors;
+            for (uint256 j; j < writes.length; ++j) {
+                permissions[reads[i]][name][writes[j]] = true;
+            }*/
+        }
+
+        component.INIT(data_);
     }
 
     // TODO takes implementation contract and deploys proxy for it, and records proxy
     function _installMutableComponent(address target_) internal verifyComponent(target_) {
         MutableComponent component = MutableComponent(target_);
-        if (!component.isMutable()) revert Kernel_CannotInstall();
+        if (!component.isMutable()) revert Kernel_ComponentMustBeMutable();
 
         components[component.NAME()] = component;
 
@@ -221,4 +273,8 @@ contract Kernel is ERC1967Factory {
 
     // TODO Add dynamic routing to components
     // TODO allow router to load data into transient memory before routing
+
+    function isComponentActive(bytes32 label_) external view returns (bool) {
+        return componentsGraph[label_].exists;
+    }
 }
