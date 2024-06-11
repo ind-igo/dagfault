@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 library LibDAG {
+
     struct Node {
         uint id;
         string data;
@@ -16,6 +17,10 @@ library LibDAG {
         uint nodeCount;
     }
 
+    error NodeDoesNotExist(uint id);
+    error EdgeAlreadyExists(uint from, uint to);
+    error AddingEdgeCreatesCycle(uint from, uint to);
+
     function addNode(DAG storage self, string memory data) internal {
         self.nodes[self.nodeCount] = Node(self.nodeCount, data);
         self.nodeExists[self.nodeCount] = true;
@@ -23,10 +28,18 @@ library LibDAG {
     }
 
     function addEdge(DAG storage self, uint from, uint to) internal {
-        require(self.nodeExists[from], "From node does not exist");
-        require(self.nodeExists[to], "To node does not exist");
-        require(!self.edges[from][to], "Edge already exists");
-        require(!hasCycle(self, from, to), "Adding this edge will create a cycle");
+        if (!self.nodeExists[from]) {
+            revert NodeDoesNotExist(from);
+        }
+        if (!self.nodeExists[to]) {
+            revert NodeDoesNotExist(to);
+        }
+        if (self.edges[from][to]) {
+            revert EdgeAlreadyExists(from, to);
+        }
+        if (hasCycle(self, from, to)) {
+            revert AddingEdgeCreatesCycle(from, to);
+        }
 
         self.edges[from][to] = true;
         self.outgoingEdges[from].push(to);
@@ -34,7 +47,9 @@ library LibDAG {
     }
 
     function removeNode(DAG storage self, uint id) internal {
-        require(self.nodeExists[id], "Node does not exist");
+        if (!self.nodeExists[id]) {
+            revert NodeDoesNotExist(id);
+        }
 
         // Remove all outgoing edges from the node
         uint[] memory outgoing = self.outgoingEdges[id];
@@ -65,21 +80,17 @@ library LibDAG {
             return true;
         }
 
-        return dfsIterative(self, to, from);
-    }
-
-    function dfsIterative(DAG storage self, uint start, uint target) internal view returns (bool) {
         uint nodeCount = self.nodeCount;
         bool[] memory visited = new bool[](nodeCount);
         uint[] memory stack = new uint[](nodeCount);
         uint stackSize = 0;
 
-        stack[stackSize++] = start;
+        stack[stackSize++] = to;
 
         while (stackSize > 0) {
             uint current = stack[--stackSize];
 
-            if (current == target) {
+            if (current == from) {
                 return true;
             }
 
@@ -100,17 +111,33 @@ library LibDAG {
     }
 
     function getNode(DAG storage self, uint id) internal view returns (Node memory) {
-        require(self.nodeExists[id], "Node does not exist");
+        if (!self.nodeExists[id]) {
+            revert NodeDoesNotExist(id);
+        }
         return self.nodes[id];
     }
 
     function getEdges(DAG storage self, uint id) internal view returns (uint[] memory) {
-        require(self.nodeExists[id], "Node does not exist");
+        if (!self.nodeExists[id]) {
+            revert NodeDoesNotExist(id);
+        }
         return self.outgoingEdges[id];
     }
 
     function getInDegree(DAG storage self, uint id) internal view returns (uint) {
-        require(self.nodeExists[id], "Node does not exist");
+        if (!self.nodeExists[id]) {
+            revert NodeDoesNotExist(id);
+        }
         return self.inDegree[id];
+    }
+
+    function hasEdge(DAG storage self, uint from, uint to) internal view returns (bool) {
+        if (!self.nodeExists[from]) {
+            revert NodeDoesNotExist(from);
+        }
+        if (!self.nodeExists[to]) {
+            revert NodeDoesNotExist(to);
+        }
+        return self.edges[from][to];
     }
 }

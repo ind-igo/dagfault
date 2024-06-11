@@ -110,7 +110,9 @@ contract Kernel is ERC1967Factory {
 
     address public executor;
 
-    LibDAG.DAG private componentDag;
+    LibDAG.DAG private components;
+
+    mapping(uint256 => Component) public getComponentForId;
     mapping(bytes32 => Component) public getComponentForName;
     mapping(Component => bytes32) public getNameForComponent;
 
