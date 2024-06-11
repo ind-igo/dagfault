@@ -221,6 +221,4 @@ contract Kernel is ERC1967Factory {
 
     // TODO Add dynamic routing to components
     // TODO allow router to load data into transient memory before routing
-    // TODO add multicall/batchable
-
 }
