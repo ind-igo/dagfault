@@ -28,5 +28,5 @@ template-aliases.'format_timestamp(timestamp)' = 'timestamp.ago()'
 # merge-tools.meld.program = "C:\\Program Files\\Meld\\meld.exe" # If not in PATH
 
 # Change the default push/fetch remote for `jj git push` and `jj git fetch`
-# git.fetch = "upstream"
-# git.push = "myfork"
+git.fetch = "upstream"
+git.push = "main"

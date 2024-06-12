@@ -234,8 +234,23 @@ contract Kernel is ERC1967Factory {
         uint256 numDependents = componentGraph.getInDegree(label);
         if (numDependents > 0) revert Kernel_ComponentHasDependents(numDependents);
 
-        // Remove from graph
+        // Remove permissions
+        Component.Dependency[] memory deps = component.DEPENDENCIES();
+
+        for (uint256 i; i < deps.length; ++i) {
+            Component dependency = getComponentForName[deps[i].label];
+
+            // Remove permissions for any functions that need it
+            dependency.setPermissions(
+                component,
+                deps[i].funcSelectors,
+                false
+            );
+        }
+
+        // Remove component node and associated edges from graph
         componentGraph.removeNode(component.LABEL());
+
     }
 
     // TODO call `upgradeAndCall` on the target and its INIT function
