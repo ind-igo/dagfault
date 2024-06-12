@@ -61,13 +61,9 @@ abstract contract Component {
         return kernel.isComponentActive(LABEL());
     }
 
-    function DEPS() external virtual returns (Dependency[] memory);
-
-    // Hook for defining which components to read from
-    function READS() external virtual returns (bytes32[] memory reads);
-
-    // Hook for defining which functions to request write access to
-    function WRITES() external virtual returns (Permissions[] memory writes);
+    // Hook for defining and configuring dependencies
+    // Gets called during installation of dependents
+    function DEPENDENCIES() external virtual returns (Dependency[] memory);
 
     // Hook for defining which functions can be routed through the kernel
     function ENDPOINTS() external virtual returns (bytes4[] memory endpoints_);
@@ -150,15 +146,14 @@ contract Kernel is ERC1967Factory {
 
     /// @notice Component <> Component permissions
     /// @dev    Component -> Component -> function selector -> bool for permission
-    mapping(Component => mapping(Component => mapping(bytes4 => bool))) public permissions;
+    /*mapping(Component => mapping(Component => mapping(bytes4 => bool))) public permissions;*/
 
     error Kernel_CannotInstall();
     error Kernel_NotInstalled();
     error Kernel_InvalidConfig();
 
     constructor() {
-        executor = msg.sender;
-        admin = msg.sender;
+        _changeExecutor(msg.sender);
         componentDag.init();
     }
 
@@ -189,26 +184,26 @@ contract Kernel is ERC1967Factory {
         if (componentGraph[label] != address(0)) revert Kernel_CannotInstall();
         if (name != type(Component).name) revert Kernel_CannotInstall();
 
-        // Add node to graph, which will make component active
+        // Add node to graph
         componentGraph.addNode(name);
 
         // Add all read and write dependencies
-        Component.Dependency[] memory deps = component.DEPS();
+        Component.Dependency[] memory deps = component.DEPENDENCIES();
 
         for (uint256 i; i < deps.length; ++i) {
-            if(componentGraph.hasEdge(name, deps[i]))) revert Kernel_InvalidConfig();
-            Component dependency = getComponentForName[deps[i].name];
+            if(componentGraph.hasEdge(name, deps[i].label))) revert Kernel_InvalidConfig();
+
+            Component dependency = getComponentForName[deps[i].label];
 
             // Create edge between component and dependency
-            componentGraph.addEdge(name, reads[i]);
+            componentGraph.addEdge(label, deps[i].label);
 
             // Add permissions for any functions that need it
-            getComponentForName[reads[i]].setPermissions(component, deps[i].funcSelectors, true);
-
-            /*bytes4[] memory writes = deps[i].funcSelectors;
-            for (uint256 j; j < writes.length; ++j) {
-                permissions[reads[i]][name][writes[j]] = true;
-            }*/
+            dependency.setPermissions(
+                component,
+                deps[i].funcSelectors,
+                true
+            );
         }
 
         component.INIT(data_);
@@ -231,11 +226,16 @@ contract Kernel is ERC1967Factory {
 
     function _uninstallComponent(address target_) internal verifyComponent(target_) {
         Component component = Component(target_);
+        if (!component.ACTIVE()) revert Kernel_NotInstalled();
 
-        if (components[component.NAME()] != address(0)) revert Kernel_NotInstalled;
-        delete components[component.NAME()];
+        bytes32 label = component.LABEL();
 
         // TODO check if dependency to anything. If so, revert
+        uint256 numDependents = componentGraph.getInDegree(label);
+        if (numDependents > 0) revert Kernel_ComponentHasDependents(numDependents);
+
+        // Remove from graph
+        componentGraph.removeNode(component.LABEL());
     }
 
     // TODO call `upgradeAndCall` on the target and its INIT function
@@ -245,7 +245,7 @@ contract Kernel is ERC1967Factory {
         if (components[component.NAME()] == address(0)) revert Kernel_NotInstalled;
         components[component.NAME()] = component;
 
-        // TODO get READs and WRITEs
+        // TODO get dependencies
         // TODO check for cycles
         // TODO add dependencies
         // TODO add permissions
@@ -269,7 +269,13 @@ contract Kernel is ERC1967Factory {
         admin = target_;
     }
 
-    function _migrateKernel(address target_) internal {}
+    function _migrateKernel(address target_) internal {
+        // TODO
+    }
+
+    function _reconfigureDependents(address target_) internal {
+        // TODO needs to be called for all dependencies. Needs DFS
+    }
 
     // TODO Add dynamic routing to components
     // TODO allow router to load data into transient memory before routing

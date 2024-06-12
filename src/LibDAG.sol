@@ -68,12 +68,10 @@ library LibDAG {
     }
 
     function hasCycle(DAG storage self, bytes32 from, bytes32 to) internal view returns (bool) {
-        if (from == to) {
-            return true;
-        }
+        if (from == to) return true;
 
         mapping(bytes32 => Node) storage nodes = self.nodes;
-        mapping(bytes32 => bool) storage visited;
+        mapping(bytes32 => bool) memory visited;
         bytes32[] memory stack = new bytes32[](nodes.length);
         uint stackSize = 0;
 
@@ -82,15 +80,13 @@ library LibDAG {
         while (stackSize > 0) {
             bytes32 current = stack[--stackSize];
 
-            if (current == from) {
-                return true;
-            }
+            if (current == from) return true;
 
             if (!visited[current]) {
                 visited[current] = true;
 
                 uint[] memory neighbors = nodes[current].outgoingEdges;
-                for (uint i = 0; i < neighbors.length; i++) {
+                for (uint i; i < neighbors.length; i++) {
                     bytes32 neighbor = bytes32(neighbors[i]);
                     if (!visited[neighbor]) {
                         stack[stackSize++] = neighbor;
