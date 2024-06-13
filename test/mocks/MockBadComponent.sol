@@ -11,7 +11,10 @@ contract MockBadComponent is Component {
         return bytes32("MockBadComponent");
     }
 
-    function DEPENDENCIES() external pure override returns (Dependency[] memory) {}
+    function DEPENDENCIES() external pure override returns (Dependency[] memory) {
+        Dependency[] memory deps = new Dependency[](1);
+
+    }
 
     function ENDPOINTS() external pure override returns (bytes4[] memory) {}
 

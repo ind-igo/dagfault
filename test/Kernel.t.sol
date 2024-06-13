@@ -7,6 +7,14 @@ import "src/Kernel.sol";
 import "test/mocks/MockComponent1.sol";
 import "test/mocks/MockComponent2.sol";
 
+/*
+tests:
+1. install regular component (no dependencies)
+2. install component with dependencies
+3. install component with data
+4. install component with multiple dependencies and data
+5. install component with cycle
+*/
 contract KernelTest is Test {
     Kernel kernel;
     MockComponent1 component1;
@@ -18,7 +26,7 @@ contract KernelTest is Test {
         component2 = new MockComponent2(address(kernel));
     }
 
-    function testInstallComponent() public {
+    function test_InstallComponent() public {
         kernel.executeAction(Kernel.Actions.INSTALL, address(component1), bytes(""));
 
         assertTrue(kernel.isComponentActive(component1.LABEL()));
