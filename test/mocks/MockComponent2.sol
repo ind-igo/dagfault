@@ -17,7 +17,8 @@ contract MockComponent2 is Component {
     function DEPENDENCIES() external pure override returns (Dependency[] memory deps) {
         deps = new Dependency[](1);
 
-        deps[0].label = "MockComponentOne";
+        deps[0].label = "MockComponent1";
+        deps[0].funcSelectors = new bytes4[](1);
         deps[0].funcSelectors[0] = MockComponent1.testPermissionedFunction.selector;
     }
 
@@ -27,7 +28,7 @@ contract MockComponent2 is Component {
     }
 
     function _init(bytes memory) internal override {
-        mockComponent1 = MockComponent1(_getComponentAddr("MockComponentOne"));
+        mockComponent1 = MockComponent1(_getComponentAddr(type(MockComponent1).name));
     }
 
     function testPermissionedFunction2() external view permissioned returns (uint256) {

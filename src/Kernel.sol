@@ -30,7 +30,7 @@ function ENDPOINTS() external view returns (bytes4[] memory endpoints) {
 abstract contract Component {
     // Allow up to 9 selectors per dependency
     struct Dependency {
-        bytes32 label;
+        bytes32 label; // TODO should this be a string? So we can use ".name"
         bytes4[] funcSelectors;
     }
 
@@ -100,8 +100,12 @@ abstract contract Component {
         return type(Component).interfaceId == interfaceId_;
     }
 
-    function _getComponentAddr(bytes32 label_) internal view returns (address) {
+    /*function _getComponentAddr(bytes32 label_) internal view returns (address) {
         return address(kernel.getComponentForLabel(label_));
+    }*/
+
+    function _getComponentAddr(string memory contractName_) internal view returns (address) {
+        return address(kernel.getComponentForLabel(bytes32(bytes(contractName_))));
     }
 }
 

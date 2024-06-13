@@ -26,11 +26,24 @@ contract KernelTest is Test {
         component2 = new MockComponent2(address(kernel));
     }
 
-    function test_InstallComponent() public {
+    function test_Install() public {
         kernel.executeAction(Kernel.Actions.INSTALL, address(component1), bytes(""));
 
         assertTrue(kernel.isComponentActive(component1.LABEL()));
         assertEq(address(kernel.getComponentForLabel(component1.LABEL())), address(component1));
+    }
+
+    function test_InstallWithDeps() public {
+        kernel.executeAction(Kernel.Actions.INSTALL, address(component1), bytes(""));
+        kernel.executeAction(Kernel.Actions.INSTALL, address(component2), bytes(""));
+
+        /*assertTrue(kernel.isComponentActive(component1.LABEL()));
+        assertTrue(kernel.isComponentActive(component2.LABEL()));
+        assertEq(address(kernel.getComponentForLabel(component1.LABEL())), address(component1));
+        assertEq(address(kernel.getComponentForLabel(component2.LABEL())), address(component2));*/
+
+        // Check dependencies were properly set
+        assertEq(address(component2.mockComponent1()), address(component1));
     }
 
     /*function testInstallComponentWithData() public {
