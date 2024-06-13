@@ -8,6 +8,8 @@ import {LibString} from "solady/src/utils/LibString.sol";
 import {LibClone} from "solady/src/utils/LibClone.sol";
 import {LibDAG} from "./LibDAG.sol";
 
+import {console2} from "forge-std/console2.sol";
+
 /*
 function DEPS() external view returns (Dependency[] memory deps) {
     deps = new Dependency[](2);
@@ -26,24 +28,22 @@ function ENDPOINTS() external view returns (bytes4[] memory endpoints) {
 */
 
 abstract contract Component {
+    // Allow up to 9 selectors per dependency
     struct Dependency {
         bytes32 label;
         bytes4[] funcSelectors;
     }
 
     Kernel public kernel;
-
     mapping(address => mapping(bytes4 => bool)) public permissions;
+
+    /*uint256 constant DEP_SIZE = 9;*/
 
     error Component_OnlyKernel(address sender_);
     error Component_NotPermitted();
 
     constructor(address kernel_) {
         kernel = Kernel(kernel_);
-    }
-
-    function noSelectors() internal pure returns (bytes4[] memory) {
-        return new bytes4[](1);
     }
 
     modifier onlyKernel() {
@@ -75,12 +75,12 @@ abstract contract Component {
     // Hook for defining which functions can be routed through the kernel
     function ENDPOINTS() external virtual returns (bytes4[] memory endpoints_);
 
-    function INIT(bytes memory encodedArgs_) external onlyKernel {
-        _init(encodedArgs_);
+    function INIT(bytes memory data_) external onlyKernel {
+        _init(data_);
     }
 
     // Must be overridden to do custom initialization
-    function _init(bytes memory encodedArgs_) internal virtual;
+    function _init(bytes memory data_) internal virtual;
 
     /// @notice Function used by kernel when migrating to a new kernel.
     function changeKernel(Kernel newKernel_) external onlyKernel {
@@ -98,6 +98,10 @@ abstract contract Component {
     // TODO might need to be virtual, so it can be overridden by mutable components
     function supportsInterface(bytes4 interfaceId_) external view virtual returns (bool) {
         return type(Component).interfaceId == interfaceId_;
+    }
+
+    function _getComponentAddr(bytes32 label_) internal view returns (address) {
+        return address(kernel.getComponentForLabel(label_));
     }
 }
 
@@ -147,9 +151,7 @@ contract Kernel is ERC1967Factory {
 
     LibDAG.DAG private componentGraph;
 
-    mapping(uint256 => Component) public getComponentForId;
-    mapping(bytes32 => Component) public getComponentForName;
-    mapping(Component => bytes32) public getNameForComponent;
+    mapping(bytes32 => Component) public getComponentForLabel;
 
     /// @notice Component <> Component permissions
     /// @dev    Component -> Component -> function selector -> bool for permission
@@ -178,9 +180,9 @@ contract Kernel is ERC1967Factory {
         // Only Executor can execute actions
         require(msg.sender == executor);
 
-        if      (action_ == Actions.INSTALL)     _installComponent(target_, data_);
+        if (action_ == Actions.INSTALL) _installComponent(target_, data_);
         /*else if (action_ == Actions.INSTALL_MUT) _installMutableComponent(target_);*/
-        /*else if (action_ == Actions.UNINSTALL)   _uninstallComponent(target_);*/
+        else if (action_ == Actions.UNINSTALL)   _uninstallComponent(target_);
         /*else if (action_ == Actions.UPGRADE)     _upgradeComponent(target_);*/
         else if (action_ == Actions.CHANGE_EXEC) _changeExecutor(target_);
         /*else if (action_ == Actions.MIGRATE)     _migrateKernel(Kernel(target_));*/
@@ -195,31 +197,33 @@ contract Kernel is ERC1967Factory {
         if (isComponentActive(label)) revert Kernel_CannotInstall();
         if (label == bytes32("")) revert Kernel_CannotInstall();
 
+        console2.log("STEP 1");
         // Add node to graph
         componentGraph.addNode(label);
+        getComponentForLabel[label] = component;
 
+        console2.log("STEP 2");
         // Add all read and write dependencies
         Component.Dependency[] memory deps = component.DEPENDENCIES();
 
         for (uint256 i; i < deps.length; ++i) {
-            if(componentGraph.hasEdge(label, deps[i].label)) revert Kernel_InvalidConfig();
+            if (componentGraph.hasEdge(label, deps[i].label)) revert Kernel_InvalidConfig();
 
-            Component dependency = getComponentForName[deps[i].label];
+            Component dependency = getComponentForLabel[deps[i].label];
 
+            console2.log("STEP 3");
             // Create edge between component and dependency
             componentGraph.addEdge(label, deps[i].label);
 
             // Add permissions for any functions that need it
-            dependency.setPermissions(
-                target_,
-                deps[i].funcSelectors,
-                true
-            );
+            dependency.setPermissions(target_, deps[i].funcSelectors, true);
         }
 
         // TODO Add endpoints to router
 
         component.INIT(data_);
+
+        // emit event
     }
 
     // TODO takes implementation contract and deploys proxy for it, and records proxy
@@ -240,7 +244,6 @@ contract Kernel is ERC1967Factory {
         bytes32 label = component.LABEL();
         if (!isComponentActive(label)) revert Kernel_ComponentNotInstalled();
 
-
         uint256 numDependents = componentGraph.getInDegree(label);
         if (numDependents > 0) revert Kernel_ComponentHasDependents(numDependents);
 
@@ -248,24 +251,20 @@ contract Kernel is ERC1967Factory {
         Component.Dependency[] memory deps = component.DEPENDENCIES();
 
         for (uint256 i; i < deps.length; ++i) {
-            Component dependency = getComponentForName[deps[i].label];
+            Component dependency = getComponentForLabel[deps[i].label];
 
             // Remove permissions for any functions that need it
-            dependency.setPermissions(
-                target_,
-                deps[i].funcSelectors,
-                false
-            );
+            dependency.setPermissions(target_, deps[i].funcSelectors, false);
         }
 
         // Remove component node and associated edges from graph
         componentGraph.removeNode(label);
-
+        getComponentForLabel[label] = Component(address(0));
     }
 
     // TODO call `upgradeAndCall` on the target and its INIT function
-    function _upgradeComponent(address target_, bytes calldata encodedArgs_) internal verifyComponent(target_) {
-        Component component = Component(target_);
+    function _upgradeComponent(address target_, bytes calldata data_) internal verifyComponent(target_) {
+        //Component component = Component(target_);
 
         // TODO Check if component is installed
         // TODO get dependencies

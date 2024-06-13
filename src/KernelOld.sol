@@ -50,7 +50,7 @@ function ensureContract(address target_) view {
 
 function ensureValidKeycode(Keycode keycode_) pure {
     bytes5 unwrapped = Keycode.unwrap(keycode_);
-    for (uint256 i = 0; i < 5; ) {
+    for (uint256 i = 0; i < 5;) {
         bytes1 char = unwrapped[i];
         if (char < 0x41 || char > 0x5A) revert InvalidKeycode(keycode_); // A-Z only
         unchecked {
@@ -95,10 +95,9 @@ abstract contract Module is KernelAdapter {
 
     /// @notice Modifier to restrict which policies have access to module functions.
     modifier permissioned() {
-        if (
-            msg.sender == address(kernel) ||
-            !kernel.modulePermissions(KEYCODE(), Policy(msg.sender), msg.sig)
-        ) revert Module_PolicyNotPermitted(msg.sender);
+        if (msg.sender == address(kernel) || !kernel.modulePermissions(KEYCODE(), Policy(msg.sender), msg.sig)) {
+            revert Module_PolicyNotPermitted(msg.sender);
+        }
         _;
     }
 
@@ -152,12 +151,7 @@ abstract contract Policy is KernelAdapter {
 contract Kernel {
     // =========  EVENTS ========= //
 
-    event PermissionsUpdated(
-        Keycode indexed keycode_,
-        Policy indexed policy_,
-        bytes4 funcSelector_,
-        bool granted_
-    );
+    event PermissionsUpdated(Keycode indexed keycode_, Policy indexed policy_, bytes4 funcSelector_, bool granted_);
     event ActionExecuted(Actions indexed action_, address indexed target_);
 
     // =========  ERRORS ========= //
@@ -249,8 +243,9 @@ contract Kernel {
     function _installModule(Module newModule_) internal {
         Keycode keycode = newModule_.KEYCODE();
 
-        if (address(getModuleForKeycode[keycode]) != address(0))
+        if (address(getModuleForKeycode[keycode]) != address(0)) {
             revert Kernel_ModuleAlreadyInstalled(keycode);
+        }
 
         getModuleForKeycode[keycode] = newModule_;
         getKeycodeForModule[newModule_] = keycode;
@@ -263,8 +258,9 @@ contract Kernel {
         Keycode keycode = newModule_.KEYCODE();
         Module oldModule = getModuleForKeycode[keycode];
 
-        if (address(oldModule) == address(0) || oldModule == newModule_)
+        if (address(oldModule) == address(0) || oldModule == newModule_) {
             revert Kernel_InvalidModuleUpgrade(keycode);
+        }
 
         getKeycodeForModule[oldModule] = Keycode.wrap(bytes5(0));
         getKeycodeForModule[newModule_] = keycode;
@@ -286,7 +282,7 @@ contract Kernel {
         Keycode[] memory dependencies = policy_.configureDependencies();
         uint256 depLength = dependencies.length;
 
-        for (uint256 i; i < depLength; ) {
+        for (uint256 i; i < depLength;) {
             Keycode keycode = dependencies[i];
 
             moduleDependents[keycode].push(policy_);
@@ -327,7 +323,7 @@ contract Kernel {
     /// @dev    NOTE: Data does not get cleared from this kernel.
     function _migrateKernel(Kernel newKernel_) internal {
         uint256 keycodeLen = allKeycodes.length;
-        for (uint256 i; i < keycodeLen; ) {
+        for (uint256 i; i < keycodeLen;) {
             Module module = Module(getModuleForKeycode[allKeycodes[i]]);
             module.changeKernel(newKernel_);
             unchecked {
@@ -336,7 +332,7 @@ contract Kernel {
         }
 
         uint256 policiesLen = activePolicies.length;
-        for (uint256 j; j < policiesLen; ) {
+        for (uint256 j; j < policiesLen;) {
             Policy policy = activePolicies[j];
 
             // Deactivate before changing kernel
@@ -351,7 +347,7 @@ contract Kernel {
         Policy[] memory dependents = moduleDependents[keycode_];
         uint256 depLength = dependents.length;
 
-        for (uint256 i; i < depLength; ) {
+        for (uint256 i; i < depLength;) {
             dependents[i].configureDependencies();
 
             unchecked {
@@ -360,13 +356,9 @@ contract Kernel {
         }
     }
 
-    function _setPolicyPermissions(
-        Policy policy_,
-        Permissions[] memory requests_,
-        bool grant_
-    ) internal {
+    function _setPolicyPermissions(Policy policy_, Permissions[] memory requests_, bool grant_) internal {
         uint256 reqLength = requests_.length;
-        for (uint256 i = 0; i < reqLength; ) {
+        for (uint256 i = 0; i < reqLength;) {
             Permissions memory request = requests_[i];
             modulePermissions[request.keycode][policy_][request.funcSelector] = grant_;
 
@@ -382,7 +374,7 @@ contract Kernel {
         Keycode[] memory dependencies = policy_.configureDependencies();
         uint256 depcLength = dependencies.length;
 
-        for (uint256 i; i < depcLength; ) {
+        for (uint256 i; i < depcLength;) {
             Keycode keycode = dependencies[i];
             Policy[] storage dependents = moduleDependents[keycode];
 

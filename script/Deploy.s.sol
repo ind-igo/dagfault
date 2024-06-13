@@ -1,10 +1,10 @@
-// SPDX-License-Identifier: AGPL-3.0
+/*// SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.13;
 
-import {CREATE3Script} from "./base/CREATE3Script.sol";
-import {Contract} from "../src/Contract.sol";
+import {CREATE3Script} from "./base/CREATE3Script.sol";*/
+/*import {Contract} from "../src/Contract.sol";*/
 
-contract DeployScript is CREATE3Script {
+/*contract DeployScript is CREATE3Script {
     constructor() CREATE3Script(vm.envString("VERSION")) {}
 
     function run() external returns (Contract c) {
@@ -22,4 +22,4 @@ contract DeployScript is CREATE3Script {
 
         vm.stopBroadcast();
     }
-}
+}*/
