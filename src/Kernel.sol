@@ -28,10 +28,10 @@ function ENDPOINTS() external view returns (bytes4[] memory endpoints) {
 abstract contract Component {
     struct Dependency {
         bytes32 label;
-        bytes4[] funcSelector;
+        bytes4[] funcSelectors;
     }
 
-    Kernel public immutable kernel;
+    Kernel public kernel;
 
     mapping(address => mapping(bytes4 => bool)) public permissions;
 
@@ -60,7 +60,7 @@ abstract contract Component {
 
     // Must be overriden to actual name of the component or else will fail on install
     function LABEL() public view virtual returns (bytes32) {
-        return bytes32(bytes(type(Component).name));
+        return "";
     }
 
     function ACTIVE() external virtual returns (bool) {
@@ -192,8 +192,8 @@ contract Kernel is ERC1967Factory {
         Component component = Component(target_);
 
         bytes32 label = component.LABEL();
-        if (componentGraph[label] != address(0)) revert Kernel_CannotInstall();
-        if (label != type(Component).name) revert Kernel_CannotInstall();
+        if (isComponentActive(label)) revert Kernel_CannotInstall();
+        if (label == bytes32("")) revert Kernel_CannotInstall();
 
         // Add node to graph
         componentGraph.addNode(label);
@@ -211,7 +211,7 @@ contract Kernel is ERC1967Factory {
 
             // Add permissions for any functions that need it
             dependency.setPermissions(
-                component,
+                target_,
                 deps[i].funcSelectors,
                 true
             );
@@ -223,7 +223,7 @@ contract Kernel is ERC1967Factory {
     }
 
     // TODO takes implementation contract and deploys proxy for it, and records proxy
-    function _installMutableComponent(address target_) internal verifyComponent(target_) {
+    function _installMutableComponent(address target_, bytes memory data_) internal verifyComponent(target_) {
         MutableComponent component = MutableComponent(target_);
         if (!component.isMutable()) revert Kernel_ComponentMustBeMutable();
 
@@ -232,7 +232,7 @@ contract Kernel is ERC1967Factory {
         // TODO add dependencies
         // TODO add permissions
 
-        component.INIT();
+        component.INIT(data_);
     }
 
     function _uninstallComponent(address target_) internal verifyComponent(target_) {
@@ -252,7 +252,7 @@ contract Kernel is ERC1967Factory {
 
             // Remove permissions for any functions that need it
             dependency.setPermissions(
-                component,
+                target_,
                 deps[i].funcSelectors,
                 false
             );
@@ -303,6 +303,6 @@ contract Kernel is ERC1967Factory {
     // TODO allow router to load data into transient memory before routing
 
     function isComponentActive(bytes32 label_) public view returns (bool) {
-        return componentGraph[label_].exists;
+        return componentGraph.getNode(label_).exists;
     }
 }
