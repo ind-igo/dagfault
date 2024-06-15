@@ -28,16 +28,14 @@ function ENDPOINTS() external view returns (bytes4[] memory endpoints) {
 */
 
 abstract contract Component {
-    // Allow up to 9 selectors per dependency
+
     struct Dependency {
-        bytes32 label; // TODO should this be a string? So we can use ".name"
+        bytes32 label;
         bytes4[] funcSelectors;
     }
 
     Kernel public kernel;
     mapping(address => mapping(bytes4 => bool)) public permissions;
-
-    /*uint256 constant DEP_SIZE = 9;*/
 
     error Component_OnlyKernel(address sender_);
     error Component_NotPermitted();
@@ -51,8 +49,9 @@ abstract contract Component {
         _;
     }
 
+    /// @notice Modifier to restrict access to only the kernel or components with permission
     modifier permissioned() {
-        if (msg.sender != address(kernel) || !permissions[msg.sender][msg.sig]) {
+        if (msg.sender != address(kernel) && !permissions[msg.sender][msg.sig]) {
             revert Component_NotPermitted();
         }
         _;
@@ -60,7 +59,7 @@ abstract contract Component {
 
     // Must be overriden to actual name of the component or else will fail on install
     function LABEL() public view virtual returns (bytes32) {
-        return "";
+        return toLabel("");
     }
 
     function ACTIVE() external virtual returns (bool) {
@@ -90,6 +89,10 @@ abstract contract Component {
     function setPermissions(address component_, bytes4[] memory selectors_, bool isAllowed_) external onlyKernel {
         if (selectors_[0] == bytes4(0)) return;
         for (uint256 i; i < selectors_.length; i++) {
+            console2.log("permission ");
+            console2.logBytes32(Component(component_).LABEL());
+            console2.logBytes4(selectors_[i]);
+
             permissions[component_][selectors_[i]] = isAllowed_;
         }
     }
@@ -100,12 +103,16 @@ abstract contract Component {
         return type(Component).interfaceId == interfaceId_;
     }
 
-    /*function _getComponentAddr(bytes32 label_) internal view returns (address) {
-        return address(kernel.getComponentForLabel(label_));
-    }*/
+    function toLabel(string memory typeName_) internal pure returns (bytes32) {
+        return bytes32(bytes(typeName_));
+    }
 
-    function _getComponentAddr(string memory contractName_) internal view returns (address) {
-        return address(kernel.getComponentForLabel(bytes32(bytes(contractName_))));
+    function getComponentAddr(string memory labelString_) internal view returns (address) {
+        return getComponentAddr(toLabel(labelString_));
+    }
+
+    function getComponentAddr(bytes32 contractName_) internal view returns (address) {
+        return address(kernel.getComponentForLabel(contractName_));
     }
 }
 
@@ -184,7 +191,7 @@ contract Kernel is ERC1967Factory {
         // Only Executor can execute actions
         require(msg.sender == executor);
 
-        if (action_ == Actions.INSTALL) _installComponent(target_, data_);
+        if (action_ == Actions.INSTALL)          _installComponent(target_, data_);
         /*else if (action_ == Actions.INSTALL_MUT) _installMutableComponent(target_);*/
         else if (action_ == Actions.UNINSTALL)   _uninstallComponent(target_);
         /*else if (action_ == Actions.UPGRADE)     _upgradeComponent(target_);*/
@@ -199,9 +206,10 @@ contract Kernel is ERC1967Factory {
 
         bytes32 label = component.LABEL();
         if (isComponentActive(label)) revert Kernel_CannotInstall();
-        if (label == bytes32("")) revert Kernel_CannotInstall();
+        if (label == ("")) revert Kernel_CannotInstall();
 
         console2.log("STEP 1");
+
         // Add node to graph
         componentGraph.addNode(label);
         getComponentForLabel[label] = component;

@@ -3,69 +3,92 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 
-import "src/Kernel.sol";
+import {Kernel, Component} from "src/Kernel.sol";
 import "test/mocks/MockComponent1.sol";
 import "test/mocks/MockComponent2.sol";
+import "test/mocks/MockComponent3.sol";
 
 /*
 tests:
-1. install regular component (no dependencies)
-2. install component with dependencies
-3. install component with data
-4. install component with multiple dependencies and data
+4. install component, read only dependency
 5. install component with cycle
+6. install component already exists
+7. install component, bad config
+
+. uninstall component
 */
 contract KernelTest is Test {
     Kernel kernel;
     MockComponent1 component1;
     MockComponent2 component2;
+    MockComponent3 component3;
 
     function setUp() public {
         kernel = new Kernel();
         component1 = new MockComponent1(address(kernel));
         component2 = new MockComponent2(address(kernel));
+        component3 = new MockComponent3(address(kernel));
     }
 
-    function test_Install() public {
+    modifier afterInstallMockComp1() {
         kernel.executeAction(Kernel.Actions.INSTALL, address(component1), bytes(""));
+        _;
+    }
 
+    modifier afterInstallMockComp2() {
+        kernel.executeAction(Kernel.Actions.INSTALL, address(component2), bytes(""));
+        _;
+    }
+
+    modifier afterInstallMockComp3() {
+        address data1 = address(0x1234);
+        bytes32 data2 = bytes32("hello");
+        bytes memory encodedData = abi.encode(data1, data2);
+        kernel.executeAction(Kernel.Actions.INSTALL, address(component3), encodedData);
+        _;
+    }
+
+    function test_Install()
+        public
+        afterInstallMockComp1
+    {
         assertTrue(kernel.isComponentActive(component1.LABEL()));
         assertEq(address(kernel.getComponentForLabel(component1.LABEL())), address(component1));
     }
 
-    function test_InstallWithDeps() public {
-        kernel.executeAction(Kernel.Actions.INSTALL, address(component1), bytes(""));
-        kernel.executeAction(Kernel.Actions.INSTALL, address(component2), bytes(""));
-
-        /*assertTrue(kernel.isComponentActive(component1.LABEL()));
+    function test_Install_WithDep() public
+        afterInstallMockComp1
+        afterInstallMockComp2
+    {
+        assertTrue(kernel.isComponentActive(component1.LABEL()));
         assertTrue(kernel.isComponentActive(component2.LABEL()));
         assertEq(address(kernel.getComponentForLabel(component1.LABEL())), address(component1));
-        assertEq(address(kernel.getComponentForLabel(component2.LABEL())), address(component2));*/
+        assertEq(address(kernel.getComponentForLabel(component2.LABEL())), address(component2));
 
         // Check dependencies were properly set
-        assertEq(address(component2.mockComponent1()), address(component1));
+        assertEq(address(component2.comp1()), address(component1));
     }
 
-    /*function testInstallComponentWithData() public {
-        bytes memory data = abi.encodeWithSelector(MockComponent.init.selector);
-        kernel.executeAction(Kernel.Actions.INSTALL, address(component1), data);
-
+    function test_Install_WithInitAndPerms() public
+        afterInstallMockComp1
+        afterInstallMockComp2
+        afterInstallMockComp3
+    {
         assertTrue(kernel.isComponentActive(component1.LABEL()));
-        assertEq(address(kernel.getComponentForName(component1.LABEL())), address(component1));
-    }*/
+        assertEq(address(kernel.getComponentForLabel(component1.LABEL())), address(component1));
 
-    /*function testInstallComponentWithDependency() public {
-        bytes memory data1 = abi.encodeWithSelector(MockComponent.init.selector);
-        kernel.executeAction(Kernel.Actions.INSTALL, address(component1), data1);
+        // Check dependencies were properly set
+        assertEq(address(component3.comp1()), address(component1));
+        assertEq(address(component3.comp2()), address(component2));
 
-        bytes memory data2 = abi.encodeWithSelector(MockComponent.init.selector);
-        kernel.executeAction(Kernel.Actions.INSTALL, address(component2), data2);
+        // Check data from init
+        vm.prank(address(kernel));
+        uint256 data3 = component3.dataFromComponent1();
 
-        assertTrue(kernel.isComponentActive(component1.LABEL()));
-        assertTrue(kernel.isComponentActive(component2.LABEL()));
-        assertEq(address(kernel.getComponentForName(component1.LABEL())), address(component1));
-        assertEq(address(kernel.getComponentForName(component2.LABEL())), address(component2));
-    }*/
+        assertEq(component3.data1(), address(0x1234));
+        assertEq(component3.data2(), bytes32("hello"));
+        assertEq(component3.dataFromComponent1(), data3);
+    }
 
     /*function testUninstallComponent() public {
         bytes memory data = abi.encodeWithSelector(MockComponent.init.selector);
