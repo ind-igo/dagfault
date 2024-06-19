@@ -19,7 +19,8 @@ abstract contract Batchable {
         }
     }
 
-    /// @dev modified from https://ethereum.stackexchange.com/questions/109457/how-to-bubble-up-a-custom-error-when-using-delegatecall
+    /// @dev modified from
+    /// https://ethereum.stackexchange.com/questions/109457/how-to-bubble-up-a-custom-error-when-using-delegatecall
     function _delegatecall(bytes memory data) internal returns (bytes memory) {
         (bool success, bytes memory returnData) = address(this).delegatecall(data);
         if (!success) {

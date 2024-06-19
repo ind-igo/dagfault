@@ -91,7 +91,7 @@ abstract contract KernelAdapter {
 abstract contract Module is KernelAdapter {
     error Module_PolicyNotPermitted(address policy_);
 
-    constructor(Kernel kernel_) KernelAdapter(kernel_) {}
+    constructor(Kernel kernel_) KernelAdapter(kernel_) { }
 
     /// @notice Modifier to restrict which policies have access to module functions.
     modifier permissioned() {
@@ -102,17 +102,17 @@ abstract contract Module is KernelAdapter {
     }
 
     /// @notice 5 byte identifier for a module.
-    function KEYCODE() public pure virtual returns (Keycode) {}
+    function KEYCODE() public pure virtual returns (Keycode) { }
 
     /// @notice Returns which semantic version of a module is being implemented.
     /// @return major - Major version upgrade indicates breaking change to the interface.
     /// @return minor - Minor version change retains backward-compatible interface.
-    function VERSION() external pure virtual returns (uint8 major, uint8 minor) {}
+    function VERSION() external pure virtual returns (uint8 major, uint8 minor) { }
 
     /// @notice Initialization function for the module
     /// @dev    This function is called when the module is installed or upgraded by the kernel.
     /// @dev    MUST BE GATED BY onlyKernel. Used to encompass any initialization or upgrade logic.
-    function INIT() external virtual onlyKernel {}
+    function INIT() external virtual onlyKernel { }
 }
 
 /// @notice Policies are application logic and external interface for the kernel and installed modules.
@@ -122,7 +122,7 @@ abstract contract Policy is KernelAdapter {
     error Policy_ModuleDoesNotExist(Keycode keycode_);
     error Policy_WrongModuleVersion(bytes expected_);
 
-    constructor(Kernel kernel_) KernelAdapter(kernel_) {}
+    constructor(Kernel kernel_) KernelAdapter(kernel_) { }
 
     /// @notice Easily accessible indicator for if a policy is activated or not.
     function isActive() external view returns (bool) {
@@ -138,11 +138,11 @@ abstract contract Policy is KernelAdapter {
 
     /// @notice Define module dependencies for this policy.
     /// @return dependencies - Keycode array of module dependencies.
-    function configureDependencies() external virtual returns (Keycode[] memory dependencies) {}
+    function configureDependencies() external virtual returns (Keycode[] memory dependencies) { }
 
     /// @notice Function called by kernel to set module function permissions.
     /// @return requests - Array of keycodes and function selectors for requested permissions.
-    function requestPermissions() external view virtual returns (Permissions[] memory requests) {}
+    function requestPermissions() external view virtual returns (Permissions[] memory requests) { }
 }
 
 /// @notice Main contract that acts as a central component registry for the protocol.
@@ -164,7 +164,8 @@ contract Kernel {
 
     // =========  PRIVILEGED ADDRESSES ========= //
 
-    /// @notice Address that is able to initiate Actions in the kernel. Can be assigned to a multisig or governance contract.
+    /// @notice Address that is able to initiate Actions in the kernel. Can be assigned to a multisig or governance
+    /// contract.
     address public executor;
 
     // =========  MODULE MANAGEMENT ========= //
@@ -178,7 +179,8 @@ contract Kernel {
     /// @notice Mapping of keycode to module address.
     mapping(Module => Keycode) public getKeycodeForModule;
 
-    /// @notice Mapping of a keycode to all of its policy dependents. Used to efficiently reconfigure policy dependencies.
+    /// @notice Mapping of a keycode to all of its policy dependents. Used to efficiently reconfigure policy
+    /// dependencies.
     mapping(Keycode => Policy[]) public moduleDependents;
 
     /// @notice Helper for module dependent arrays. Prevents the need to loop through array.

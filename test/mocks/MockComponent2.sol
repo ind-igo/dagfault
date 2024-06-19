@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Component} from "src/Kernel.sol";
-import {MockComponent1} from "./MockComponent1.sol";
+import { Component } from "src/Kernel.sol";
+import { MockComponent1 } from "./MockComponent1.sol";
 
 // Make dependent on MockComponentOne
 contract MockComponent2 is Component {
     MockComponent1 public comp1;
 
-    constructor(address kernel_) Component(kernel_) {}
+    constructor(address kernel_) Component(kernel_) { }
 
     function LABEL() public pure override returns (bytes32) {
         return toLabel(type(MockComponent2).name);

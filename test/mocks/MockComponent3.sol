@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Component} from "src/Kernel.sol";
-import {MockComponent1} from "./MockComponent1.sol";
-import {MockComponent2} from "./MockComponent2.sol";
+import { Component } from "src/Kernel.sol";
+import { MockComponent1 } from "./MockComponent1.sol";
+import { MockComponent2 } from "./MockComponent2.sol";
 
-import {console2} from "forge-std/console2.sol";
+import { console2 } from "forge-std/console2.sol";
 
 // Make dependent on MockComponentOne and MockComponentTwo
 contract MockComponent3 is Component {
@@ -16,16 +16,16 @@ contract MockComponent3 is Component {
     bytes32 public data2;
     uint256 public dataFromComponent1;
 
-    constructor(address kernel_) Component(kernel_) {}
+    constructor(address kernel_) Component(kernel_) { }
 
     function LABEL() public pure override returns (bytes32) {
-        return bytes32("MockComponent3");
+        return toLabel(type(MockComponent3).name);
     }
 
     function DEPENDENCIES() external pure override returns (Dependency[] memory deps) {
         deps = new Dependency[](2);
 
-        deps[0].label = "MockComponent1";
+        deps[0].label = toLabel(type(MockComponent1).name);
         deps[0].funcSelectors = new bytes4[](1);
         deps[0].funcSelectors[0] = MockComponent1.testPermissionedFunction1.selector;
 
@@ -57,5 +57,4 @@ contract MockComponent3 is Component {
     function mockEndpoint2() external pure returns (uint256) {
         return 2;
     }
-
 }

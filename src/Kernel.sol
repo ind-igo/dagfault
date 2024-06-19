@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {UUPSUpgradeable} from "solady/src/utils/UUPSUpgradeable.sol";
-import {ERC1967Factory} from "solady/src/utils/ERC1967Factory.sol";
-import {Initializable} from "solady/src/utils/Initializable.sol";
-import {LibString} from "solady/src/utils/LibString.sol";
-import {LibClone} from "solady/src/utils/LibClone.sol";
-import {LibDAG} from "./LibDAG.sol";
+import { UUPSUpgradeable } from "solady/src/utils/UUPSUpgradeable.sol";
+import { ERC1967Factory } from "solady/src/utils/ERC1967Factory.sol";
+import { Initializable } from "solady/src/utils/Initializable.sol";
+import { LibString } from "solady/src/utils/LibString.sol";
+import { LibClone } from "solady/src/utils/LibClone.sol";
+import { LibDAG } from "./LibDAG.sol";
 
-import {console2} from "forge-std/console2.sol";
+import { console2 } from "forge-std/console2.sol";
 
 /*
 function DEPS() external view returns (Dependency[] memory deps) {
@@ -28,7 +28,6 @@ function ENDPOINTS() external view returns (bytes4[] memory endpoints) {
 */
 
 abstract contract Component {
-
     struct Dependency {
         bytes32 label;
         bytes4[] funcSelectors;
@@ -191,9 +190,9 @@ contract Kernel is ERC1967Factory {
         // Only Executor can execute actions
         require(msg.sender == executor);
 
-        if (action_ == Actions.INSTALL)          _installComponent(target_, data_);
+        if (action_ == Actions.INSTALL) _installComponent(target_, data_);
         /*else if (action_ == Actions.INSTALL_MUT) _installMutableComponent(target_);*/
-        else if (action_ == Actions.UNINSTALL)   _uninstallComponent(target_);
+        else if (action_ == Actions.UNINSTALL) _uninstallComponent(target_);
         /*else if (action_ == Actions.UPGRADE)     _upgradeComponent(target_);*/
         else if (action_ == Actions.CHANGE_EXEC) _changeExecutor(target_);
         /*else if (action_ == Actions.MIGRATE)     _migrateKernel(Kernel(target_));*/
@@ -206,7 +205,7 @@ contract Kernel is ERC1967Factory {
 
         bytes32 label = component.LABEL();
         if (isComponentActive(label)) revert Kernel_CannotInstall();
-        if (label == ("")) revert Kernel_CannotInstall();
+        if (label == "") revert Kernel_CannotInstall();
 
         console2.log("STEP 1");
 
@@ -219,6 +218,7 @@ contract Kernel is ERC1967Factory {
         Component.Dependency[] memory deps = component.DEPENDENCIES();
 
         for (uint256 i; i < deps.length; ++i) {
+            // TODO don't think this is possible. If label doesn't exist, then the edge can't exist
             if (componentGraph.hasEdge(label, deps[i].label)) revert Kernel_InvalidConfig();
 
             Component dependency = getComponentForLabel[deps[i].label];

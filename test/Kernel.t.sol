@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 
-import {Kernel, Component} from "src/Kernel.sol";
+import { Kernel, Component } from "src/Kernel.sol";
 import "test/mocks/MockComponentGen.sol";
 import "test/mocks/MockComponent1.sol";
 import "test/mocks/MockComponent2.sol";
@@ -11,9 +11,7 @@ import "test/mocks/MockComponent3.sol";
 
 /*
 tests:
-4. install component, read only dependency
 5. install component with cycle
-6. install component already exists
 7. install component, bad config
 8. uninstall component
 */
@@ -48,18 +46,12 @@ contract KernelTest is Test {
         _;
     }
 
-    function test_Install()
-        public
-        afterInstallMockComp1
-    {
+    function test_Install() public afterInstallMockComp1 {
         assertTrue(kernel.isComponentActive(component1.LABEL()));
         assertEq(address(kernel.getComponentForLabel(component1.LABEL())), address(component1));
     }
 
-    function test_Install_WithDep() public
-        afterInstallMockComp1
-        afterInstallMockComp2
-    {
+    function test_Install_WithDep() public afterInstallMockComp1 afterInstallMockComp2 {
         assertTrue(kernel.isComponentActive(component1.LABEL()));
         assertTrue(kernel.isComponentActive(component2.LABEL()));
         assertEq(address(kernel.getComponentForLabel(component1.LABEL())), address(component1));
@@ -69,11 +61,7 @@ contract KernelTest is Test {
         assertEq(address(component2.comp1()), address(component1));
     }
 
-    function test_Install_WithInitAndPerms() public
-        afterInstallMockComp1
-        afterInstallMockComp2
-        afterInstallMockComp3
-    {
+    function test_Install_WithInitAndPerms() public afterInstallMockComp1 afterInstallMockComp2 afterInstallMockComp3 {
         assertTrue(kernel.isComponentActive(component1.LABEL()));
         assertEq(address(kernel.getComponentForLabel(component1.LABEL())), address(component1));
 
@@ -93,30 +81,33 @@ contract KernelTest is Test {
     function test_Install_ReadOnlyDep() public afterInstallMockComp1 {
         Component.Dependency[] memory readDep = new Component.Dependency[](1);
         bytes4[] memory funcSelectors = new bytes4[](1);
-        readDep[0] = Component.Dependency({
-            label: component1.LABEL(),
-            funcSelectors: funcSelectors
-        });
+        readDep[0] = Component.Dependency({ label: component1.LABEL(), funcSelectors: funcSelectors });
 
         // Make new component with read only dependency
-        Component readOnly = new MockComponentGen(
-            address(kernel),
-            "ReadOnlyDep",
-            readDep,
-            new bytes4[](1)
-        );
+        Component readOnly = new MockComponentGen(address(kernel), "ReadOnlyDep", readDep, new bytes4[](1));
 
         kernel.executeAction(Kernel.Actions.INSTALL, address(readOnly), bytes(""));
+
+        assertTrue(kernel.isComponentActive(readOnly.LABEL()));
+        assertEq(address(kernel.getComponentForLabel(readOnly.LABEL())), address(readOnly));
     }
 
-    /*function testUninstallComponent() public {
-        bytes memory data = abi.encodeWithSelector(MockComponent.init.selector);
-        kernel.executeAction(Kernel.Actions.INSTALL, address(component1), data);
+    // TODO
+    function testRevert_Install_WithCycle() public { }
 
+    function testRevert_Install_AlreadyExists() public afterInstallMockComp1 {
+        vm.expectRevert(Kernel.Kernel_CannotInstall.selector);
+        kernel.executeAction(Kernel.Actions.INSTALL, address(component1), bytes(""));
+    }
+
+    // TODO might not be possible
+    function testRevert_Install_BadConfig() public { }
+
+    function testUninstallComponent() public afterInstallMockComp1 {
         kernel.executeAction(Kernel.Actions.UNINSTALL, address(component1), "");
 
         assertFalse(kernel.isComponentActive(component1.LABEL()));
-    }*/
+    }
 
     function testChangeExecutor() public {
         address newExecutor = address(0x1234);
