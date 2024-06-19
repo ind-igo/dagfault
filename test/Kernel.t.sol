@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import "forge-std/Test.sol";
 
 import {Kernel, Component} from "src/Kernel.sol";
+import "test/mocks/MockComponentGen.sol";
 import "test/mocks/MockComponent1.sol";
 import "test/mocks/MockComponent2.sol";
 import "test/mocks/MockComponent3.sol";
@@ -14,8 +15,7 @@ tests:
 5. install component with cycle
 6. install component already exists
 7. install component, bad config
-
-. uninstall component
+8. uninstall component
 */
 contract KernelTest is Test {
     Kernel kernel;
@@ -88,6 +88,25 @@ contract KernelTest is Test {
         assertEq(component3.data1(), address(0x1234));
         assertEq(component3.data2(), bytes32("hello"));
         assertEq(component3.dataFromComponent1(), data3);
+    }
+
+    function test_Install_ReadOnlyDep() public afterInstallMockComp1 {
+        Component.Dependency[] memory readDep = new Component.Dependency[](1);
+        bytes4[] memory funcSelectors = new bytes4[](1);
+        readDep[0] = Component.Dependency({
+            label: component1.LABEL(),
+            funcSelectors: funcSelectors
+        });
+
+        // Make new component with read only dependency
+        Component readOnly = new MockComponentGen(
+            address(kernel),
+            "ReadOnlyDep",
+            readDep,
+            new bytes4[](1)
+        );
+
+        kernel.executeAction(Kernel.Actions.INSTALL, address(readOnly), bytes(""));
     }
 
     /*function testUninstallComponent() public {
