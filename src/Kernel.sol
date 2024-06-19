@@ -102,13 +102,15 @@ abstract contract Component {
         return type(Component).interfaceId == interfaceId_;
     }
 
+    // --- Helpers ---------
+
     function toLabel(string memory typeName_) internal pure returns (bytes32) {
         return bytes32(bytes(typeName_));
     }
 
-    function getComponentAddr(string memory labelString_) internal view returns (address) {
-        return getComponentAddr(toLabel(labelString_));
-    }
+    // function getComponentAddr(string memory labelString_) internal view returns (address) {
+    //     return getComponentAddr(toLabel(labelString_));
+    // }
 
     function getComponentAddr(bytes32 contractName_) internal view returns (address) {
         return address(kernel.getComponentForLabel(contractName_));
@@ -160,16 +162,12 @@ contract Kernel is ERC1967Factory {
     address public executor;
 
     LibDAG.DAG private componentGraph;
-
     mapping(bytes32 => Component) public getComponentForLabel;
-
-    /// @notice Component <> Component permissions
-    /// @dev    Component -> Component -> function selector -> bool for permission
-    /*mapping(Component => mapping(Component => mapping(bytes4 => bool))) public permissions;*/
 
     event ActionExecuted(Actions action, address target);
 
     error Kernel_CannotInstall();
+    error Kernel_ComponentAlreadyInstalled();
     error Kernel_ComponentNotInstalled();
     error Kernel_ComponentMustBeMutable();
     error Kernel_ComponentHasDependents(uint256 numDependents);
@@ -181,7 +179,7 @@ contract Kernel is ERC1967Factory {
 
     // TODO add real error message
     modifier verifyComponent(address target_) {
-        if (!Component(target_).supportsInterface(type(Component).interfaceId)) revert();
+        if (!Component(target_).supportsInterface(type(Component).interfaceId)) revert Kernel_InvalidConfig();
         _;
     }
 
@@ -190,9 +188,9 @@ contract Kernel is ERC1967Factory {
         // Only Executor can execute actions
         require(msg.sender == executor);
 
-        if (action_ == Actions.INSTALL) _installComponent(target_, data_);
+        if (action_ == Actions.INSTALL)          _installComponent(target_, data_);
         /*else if (action_ == Actions.INSTALL_MUT) _installMutableComponent(target_);*/
-        else if (action_ == Actions.UNINSTALL) _uninstallComponent(target_);
+        else if (action_ == Actions.UNINSTALL)   _uninstallComponent(target_);
         /*else if (action_ == Actions.UPGRADE)     _upgradeComponent(target_);*/
         else if (action_ == Actions.CHANGE_EXEC) _changeExecutor(target_);
         /*else if (action_ == Actions.MIGRATE)     _migrateKernel(Kernel(target_));*/
@@ -204,26 +202,23 @@ contract Kernel is ERC1967Factory {
         Component component = Component(target_);
 
         bytes32 label = component.LABEL();
-        if (isComponentActive(label)) revert Kernel_CannotInstall();
-        if (label == "") revert Kernel_CannotInstall();
 
-        console2.log("STEP 1");
+        if (isComponentActive(label)) revert Kernel_ComponentAlreadyInstalled();
+        if (label == "") revert Kernel_InvalidConfig();
 
         // Add node to graph
         componentGraph.addNode(label);
         getComponentForLabel[label] = component;
 
-        console2.log("STEP 2");
         // Add all read and write dependencies
         Component.Dependency[] memory deps = component.DEPENDENCIES();
 
         for (uint256 i; i < deps.length; ++i) {
-            // TODO don't think this is possible. If label doesn't exist, then the edge can't exist
+            // TODO think about how to hit this
             if (componentGraph.hasEdge(label, deps[i].label)) revert Kernel_InvalidConfig();
 
             Component dependency = getComponentForLabel[deps[i].label];
 
-            console2.log("STEP 3");
             // Create edge between component and dependency
             componentGraph.addEdge(label, deps[i].label);
 
@@ -235,18 +230,16 @@ contract Kernel is ERC1967Factory {
 
         component.INIT(data_);
 
-        // emit event
+        emit ActionExecuted(Actions.INSTALL, target_);
     }
 
+    // TODO can maybe be special case of install
     // TODO takes implementation contract and deploys proxy for it, and records proxy
     function _installMutableComponent(address target_, bytes memory data_) internal verifyComponent(target_) {
         MutableComponent component = MutableComponent(target_);
         if (!component.isMutable()) revert Kernel_ComponentMustBeMutable();
 
-        // TODO get READs and WRITEs
-        // TODO check for cycles
-        // TODO add dependencies
-        // TODO add permissions
+        // TODO do same steps as install
 
         component.INIT(data_);
     }
@@ -272,6 +265,8 @@ contract Kernel is ERC1967Factory {
         // Remove component node and associated edges from graph
         componentGraph.removeNode(label);
         getComponentForLabel[label] = Component(address(0));
+    
+        emit ActionExecuted(Actions.UNINSTALL, target_);
     }
 
     // TODO call `upgradeAndCall` on the target and its INIT function
@@ -303,7 +298,7 @@ contract Kernel is ERC1967Factory {
     }
 
     function _migrateKernel(address target_) internal {
-        // TODO
+        // TODO traverse graph and call changeKernel on all components from bottom up
     }
 
     function _reconfigureDependents(address target_) internal {

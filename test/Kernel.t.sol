@@ -10,10 +10,9 @@ import "test/mocks/MockComponent2.sol";
 import "test/mocks/MockComponent3.sol";
 
 /*
-tests:
-5. install component with cycle
-7. install component, bad config
-8. uninstall component
+todo tests:
+- install with endpoints
+- uninstall with
 */
 contract KernelTest is Test {
     Kernel kernel;
@@ -51,7 +50,7 @@ contract KernelTest is Test {
         assertEq(address(kernel.getComponentForLabel(component1.LABEL())), address(component1));
     }
 
-    function test_Install_WithDep() public afterInstallMockComp1 afterInstallMockComp2 {
+    function test_Install_WithDeps() public afterInstallMockComp1 afterInstallMockComp2 {
         assertTrue(kernel.isComponentActive(component1.LABEL()));
         assertTrue(kernel.isComponentActive(component2.LABEL()));
         assertEq(address(kernel.getComponentForLabel(component1.LABEL())), address(component1));
@@ -92,29 +91,49 @@ contract KernelTest is Test {
         assertEq(address(kernel.getComponentForLabel(readOnly.LABEL())), address(readOnly));
     }
 
+    function testRevert_Install_NotComponent() public {
+        vm.expectRevert(Kernel.Kernel_InvalidConfig.selector);
+        kernel.executeAction(Kernel.Actions.INSTALL, address(0x1234), bytes(""));
+    }
+
     // TODO
-    function testRevert_Install_WithCycle() public { }
+    // function testRevert_Install_WithCycle() public {}
 
     function testRevert_Install_AlreadyExists() public afterInstallMockComp1 {
-        vm.expectRevert(Kernel.Kernel_CannotInstall.selector);
+        vm.expectRevert(Kernel.Kernel_ComponentAlreadyInstalled.selector);
         kernel.executeAction(Kernel.Actions.INSTALL, address(component1), bytes(""));
     }
 
     // TODO might not be possible
-    function testRevert_Install_BadConfig() public { }
+    // function testRevert_Install_BadConfig() public { }
 
-    function testUninstallComponent() public afterInstallMockComp1 {
+    function test_Uninstall() public afterInstallMockComp1 {
         kernel.executeAction(Kernel.Actions.UNINSTALL, address(component1), "");
-
         assertFalse(kernel.isComponentActive(component1.LABEL()));
     }
 
-    function testChangeExecutor() public {
+    function test_Uninstall2() public afterInstallMockComp1 afterInstallMockComp2 {
+        kernel.executeAction(Kernel.Actions.UNINSTALL, address(component2), "");
+        assertTrue(kernel.isComponentActive(component1.LABEL()));
+        assertFalse(kernel.isComponentActive(component2.LABEL()));
+    }
+
+    function testRevert_Uninstall_NotInstalled() public {
+        vm.expectRevert(Kernel.Kernel_ComponentNotInstalled.selector);
+        kernel.executeAction(Kernel.Actions.UNINSTALL, address(component1), "");
+    }
+
+    function testRevert_Uninstall_WithDependents() public afterInstallMockComp1 afterInstallMockComp2 {
+        vm.expectRevert(
+            abi.encodeWithSelector(Kernel.Kernel_ComponentHasDependents.selector, 1)
+        );
+        kernel.executeAction(Kernel.Actions.UNINSTALL, address(component1), "");
+    }
+
+    function test_ChangeExecutor() public {
         address newExecutor = address(0x1234);
         kernel.executeAction(Kernel.Actions.CHANGE_EXEC, newExecutor, "");
 
         assertEq(kernel.executor(), newExecutor);
     }
-
-    // Add more test cases for other actions and scenarios
 }

@@ -29,7 +29,7 @@ contract MockComponent3 is Component {
         deps[0].funcSelectors = new bytes4[](1);
         deps[0].funcSelectors[0] = MockComponent1.testPermissionedFunction1.selector;
 
-        deps[1].label = "MockComponent2";
+        deps[1].label = toLabel(type(MockComponent2).name);
         deps[1].funcSelectors = new bytes4[](1);
         deps[1].funcSelectors[0] = MockComponent2.testPermissionedFunction2.selector;
     }
@@ -41,8 +41,8 @@ contract MockComponent3 is Component {
     }
 
     function _init(bytes memory data_) internal override {
-        comp1 = MockComponent1(getComponentAddr(type(MockComponent1).name));
-        comp2 = MockComponent2(getComponentAddr(type(MockComponent2).name));
+        comp1 = MockComponent1(getComponentAddr(toLabel(type(MockComponent1).name)));
+        comp2 = MockComponent2(getComponentAddr(toLabel(type(MockComponent2).name)));
 
         // Decode data
         (data1, data2) = abi.decode(data_, (address, bytes32));

@@ -29,7 +29,7 @@ contract MockComponent2 is Component {
     }
 
     function _init(bytes memory) internal override {
-        comp1 = MockComponent1(getComponentAddr(type(MockComponent1).name));
+        comp1 = MockComponent1(getComponentAddr(toLabel(type(MockComponent1).name)));
     }
 
     function testPermissionedFunction2() external view permissioned returns (uint256) {
