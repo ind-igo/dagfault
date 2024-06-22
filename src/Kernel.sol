@@ -10,23 +10,6 @@ import { LibDAG } from "./LibDAG.sol";
 
 import { console2 } from "forge-std/console2.sol";
 
-/*
-function DEPS() external view returns (Dependency[] memory deps) {
-    deps = new Dependency[](2);
-    bytes4[2] memory poolMgrSelectors = [
-        BPOOL.addLiquidityTo.selector,
-        BPOOL.removeLiquidityFrom.selector
-    ];
-    deps.push(Dependency(PoolManager.NAME(), poolMgrSelectors);
-    deps.push(Dependency(TokenManager.NAME(), new bytes4[]); // NO_SELECTORS);
-}
-
-function ENDPOINTS() external view returns (bytes4[] memory endpoints) {
-    endpoints = new bytes4[](1);
-    endpoints[0] = this.exampleEndpoint.selector;
-}
-*/
-
 abstract contract Component {
     struct Dependency {
         bytes32 label;
@@ -67,6 +50,7 @@ abstract contract Component {
 
     // Hook for defining and configuring dependencies
     // Gets called during installation of dependents
+    // TODO consider split into read and write dependencies. writes check for cycles
     function DEPENDENCIES() external virtual returns (Dependency[] memory);
 
     // TODO add to router's endpoints mapping
@@ -88,10 +72,9 @@ abstract contract Component {
     function setPermissions(address component_, bytes4[] memory selectors_, bool isAllowed_) external onlyKernel {
         if (selectors_[0] == bytes4(0)) return;
         for (uint256 i; i < selectors_.length; i++) {
-            console2.log("permission ");
-            console2.logBytes32(Component(component_).LABEL());
-            console2.logBytes4(selectors_[i]);
-
+            // console2.log("permission ");
+            // console2.logBytes32(Component(component_).LABEL());
+            // console2.logBytes4(selectors_[i]);
             permissions[component_][selectors_[i]] = isAllowed_;
         }
     }
@@ -163,6 +146,7 @@ contract Kernel is ERC1967Factory {
 
     LibDAG.DAG private componentGraph;
     mapping(bytes32 => Component) public getComponentForLabel;
+    mapping(bytes4 => address) public getFunctionForEndpoint;
 
     event ActionExecuted(Actions action, address target);
 
@@ -172,6 +156,7 @@ contract Kernel is ERC1967Factory {
     error Kernel_ComponentMustBeMutable();
     error Kernel_ComponentHasDependents(uint256 numDependents);
     error Kernel_InvalidConfig();
+    error Kernel_EndpointAlreadyExists();
 
     constructor() {
         _changeExecutor(msg.sender);
@@ -189,11 +174,11 @@ contract Kernel is ERC1967Factory {
         require(msg.sender == executor);
 
         if (action_ == Actions.INSTALL)          _installComponent(target_, data_);
-        /*else if (action_ == Actions.INSTALL_MUT) _installMutableComponent(target_);*/
+        //else if (action_ == Actions.INSTALL_MUT) _installMutableComponent(target_);
         else if (action_ == Actions.UNINSTALL)   _uninstallComponent(target_);
-        /*else if (action_ == Actions.UPGRADE)     _upgradeComponent(target_);*/
+        //else if (action_ == Actions.UPGRADE)     _upgradeComponent(target_);
         else if (action_ == Actions.CHANGE_EXEC) _changeExecutor(target_);
-        /*else if (action_ == Actions.MIGRATE)     _migrateKernel(Kernel(target_));*/
+        //else if (action_ == Actions.MIGRATE)     _migrateKernel(Kernel(target_));
 
         emit ActionExecuted(action_, target_);
     }
@@ -202,20 +187,25 @@ contract Kernel is ERC1967Factory {
         Component component = Component(target_);
 
         bytes32 label = component.LABEL();
+        console2.log("STEP 0");
 
         if (isComponentActive(label)) revert Kernel_ComponentAlreadyInstalled();
         if (label == "") revert Kernel_InvalidConfig();
+
+        console2.log("STEP 1");
 
         // Add node to graph
         componentGraph.addNode(label);
         getComponentForLabel[label] = component;
 
+        console2.log("STEP 2");
         // Add all read and write dependencies
         Component.Dependency[] memory deps = component.DEPENDENCIES();
 
         for (uint256 i; i < deps.length; ++i) {
             // TODO think about how to hit this
             if (componentGraph.hasEdge(label, deps[i].label)) revert Kernel_InvalidConfig();
+            console2.log("STEP 3...");
 
             Component dependency = getComponentForLabel[deps[i].label];
 
@@ -227,12 +217,20 @@ contract Kernel is ERC1967Factory {
         }
 
         // TODO Add endpoints to router
+        bytes4[] memory endpoints = component.ENDPOINTS();
+        for (uint256 i; i < endpoints.length; ++i) {
+            if (getFunctionForEndpoint[endpoints[i]] != address(0)) {
+                revert Kernel_EndpointAlreadyExists();
+            }
+            getFunctionForEndpoint[endpoints[i]] = target_;
+        }
 
         component.INIT(data_);
 
         emit ActionExecuted(Actions.INSTALL, target_);
     }
 
+    /*
     // TODO can maybe be special case of install
     // TODO takes implementation contract and deploys proxy for it, and records proxy
     function _installMutableComponent(address target_, bytes memory data_) internal verifyComponent(target_) {
@@ -243,6 +241,7 @@ contract Kernel is ERC1967Factory {
 
         component.INIT(data_);
     }
+    */
 
     function _uninstallComponent(address target_) internal verifyComponent(target_) {
         Component component = Component(target_);
@@ -254,17 +253,20 @@ contract Kernel is ERC1967Factory {
 
         // Remove all permissions
         Component.Dependency[] memory deps = component.DEPENDENCIES();
-
         for (uint256 i; i < deps.length; ++i) {
             Component dependency = getComponentForLabel[deps[i].label];
-
-            // Remove permissions for any functions that need it
             dependency.setPermissions(target_, deps[i].funcSelectors, false);
         }
 
         // Remove component node and associated edges from graph
         componentGraph.removeNode(label);
         getComponentForLabel[label] = Component(address(0));
+
+        // Remove endpoints from router
+        bytes4[] memory endpoints = component.ENDPOINTS();
+        for (uint256 i; i < endpoints.length; ++i) {
+            getFunctionForEndpoint[endpoints[i]] = address(0);
+        }
     
         emit ActionExecuted(Actions.UNINSTALL, target_);
     }
@@ -310,5 +312,44 @@ contract Kernel is ERC1967Factory {
 
     function isComponentActive(bytes32 label_) public view returns (bool) {
         return componentGraph.getNode(label_).exists;
+    }
+
+    /**
+	 *	@notice delegateCalls the appropriate implementation address for the given incoming function call.
+	 *	@dev The implementation address to delegateCall MUST be retrieved from calling `getImplementationForFunction` with the
+     *       incoming call's function selector.
+	 */
+    fallback() external virtual {
+        if(msg.data.length == 0) return;
+        
+        address implementation = getFunctionForEndpoint[msg.sig];
+        require(implementation != address(0), "Router: function does not exist.");
+        _delegate(implementation);
+    }
+
+    /// @dev delegateCalls an `implementation` smart contract.
+    function _delegate(address implementation) internal virtual {
+        assembly {
+            // Copy msg.data. We take full control of memory in this inline assembly
+            // block because it will not return to Solidity code. We overwrite the
+            // Solidity scratch pad at memory position 0.
+            calldatacopy(0, 0, calldatasize())
+
+            // Call the implementation.
+            // out and outsize are 0 because we don't know the size yet.
+            let result := delegatecall(gas(), implementation, 0, calldatasize(), 0, 0)
+
+            // Copy the returned data.
+            returndatacopy(0, 0, returndatasize())
+
+            switch result
+            // delegatecall returns 0 on error.
+            case 0 {
+                revert(0, returndatasize())
+            }
+            default {
+                return(0, returndatasize())
+            }
+        }
     }
 }

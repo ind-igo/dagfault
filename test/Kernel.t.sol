@@ -48,6 +48,9 @@ contract KernelTest is Test {
     function test_Install() public afterInstallMockComp1 {
         assertTrue(kernel.isComponentActive(component1.LABEL()));
         assertEq(address(kernel.getComponentForLabel(component1.LABEL())), address(component1));
+        // Test if endpoint is registered
+        uint256 result = component1.testEndpoint1();
+        assertEq(result, MockComponent1(address(kernel)).testEndpoint1());
     }
 
     function test_Install_WithDeps() public afterInstallMockComp1 afterInstallMockComp2 {
@@ -58,6 +61,12 @@ contract KernelTest is Test {
 
         // Check dependencies were properly set
         assertEq(address(component2.comp1()), address(component1));
+        // Test routing
+        console2.log(kernel.getFunctionForEndpoint(
+            bytes4(bytes32(abi.encodeWithSelector(component2.callPermissionedFunction1.selector)))
+        ));
+        console2.log(address(component2));
+        assertGt(component2.callPermissionedFunction1(), MockComponent2(address(kernel)).callPermissionedFunction1());
     }
 
     function test_Install_WithInitAndPerms() public afterInstallMockComp1 afterInstallMockComp2 afterInstallMockComp3 {
@@ -91,6 +100,7 @@ contract KernelTest is Test {
         assertEq(address(kernel.getComponentForLabel(readOnly.LABEL())), address(readOnly));
     }
 
+    // TODO this test fails but not sure why
     function testRevert_Install_NotComponent() public {
         vm.expectRevert(Kernel.Kernel_InvalidConfig.selector);
         kernel.executeAction(Kernel.Actions.INSTALL, address(0x1234), bytes(""));
@@ -102,6 +112,8 @@ contract KernelTest is Test {
     function testRevert_Install_AlreadyExists() public afterInstallMockComp1 {
         vm.expectRevert(Kernel.Kernel_ComponentAlreadyInstalled.selector);
         kernel.executeAction(Kernel.Actions.INSTALL, address(component1), bytes(""));
+
+        // Check that endpoint 
     }
 
     // TODO might not be possible

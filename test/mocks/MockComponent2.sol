@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Component } from "src/Kernel.sol";
 import { MockComponent1 } from "./MockComponent1.sol";
+import { console2 } from "forge-std/console2.sol";
 
 // Make dependent on MockComponentOne
 contract MockComponent2 is Component {
@@ -29,7 +30,9 @@ contract MockComponent2 is Component {
     }
 
     function _init(bytes memory) internal override {
+        console2.log("MockComponent2 init");
         comp1 = MockComponent1(getComponentAddr(toLabel(type(MockComponent1).name)));
+        console2.log("MockComponent2 comp1: ", address(comp1));
     }
 
     function testPermissionedFunction2() external view permissioned returns (uint256) {
@@ -37,6 +40,10 @@ contract MockComponent2 is Component {
     }
 
     function callPermissionedFunction1() external view returns (uint256) {
-        return comp1.testPermissionedFunction1();
+        // return comp1.testPermissionedFunction1();
+        console2.log("WTFFF");
+        uint256 result = comp1.testPermissionedFunction1();
+        console2.log(result);
+        return result;
     }
 }
