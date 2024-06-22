@@ -48,9 +48,6 @@ contract KernelTest is Test {
     function test_Install() public afterInstallMockComp1 {
         assertTrue(kernel.isComponentActive(component1.LABEL()));
         assertEq(address(kernel.getComponentForLabel(component1.LABEL())), address(component1));
-        // Test if endpoint is registered
-        uint256 result = component1.testEndpoint1();
-        assertEq(result, MockComponent1(address(kernel)).testEndpoint1());
     }
 
     function test_Install_WithDeps() public afterInstallMockComp1 afterInstallMockComp2 {
@@ -61,12 +58,6 @@ contract KernelTest is Test {
 
         // Check dependencies were properly set
         assertEq(address(component2.comp1()), address(component1));
-        // Test routing
-        console2.log(kernel.getFunctionForEndpoint(
-            bytes4(bytes32(abi.encodeWithSelector(component2.callPermissionedFunction1.selector)))
-        ));
-        console2.log(address(component2));
-        assertGt(component2.callPermissionedFunction1(), MockComponent2(address(kernel)).callPermissionedFunction1());
     }
 
     function test_Install_WithInitAndPerms() public afterInstallMockComp1 afterInstallMockComp2 afterInstallMockComp3 {
@@ -92,7 +83,7 @@ contract KernelTest is Test {
         readDep[0] = Component.Dependency({ label: component1.LABEL(), funcSelectors: funcSelectors });
 
         // Make new component with read only dependency
-        Component readOnly = new MockComponentGen(address(kernel), "ReadOnlyDep", readDep, new bytes4[](1));
+        Component readOnly = new MockComponentGen(address(kernel), "ReadOnlyDep", readDep);
 
         kernel.executeAction(Kernel.Actions.INSTALL, address(readOnly), bytes(""));
 

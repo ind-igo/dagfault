@@ -34,12 +34,6 @@ contract MockComponent3 is Component {
         deps[1].funcSelectors[0] = MockComponent2.testPermissionedFunction2.selector;
     }
 
-    function ENDPOINTS() external pure override returns (bytes4[] memory endpoints) {
-        endpoints = new bytes4[](2);
-        endpoints[0] = this.mockEndpoint1.selector;
-        endpoints[1] = this.mockEndpoint2.selector;
-    }
-
     function _init(bytes memory data_) internal override {
         comp1 = MockComponent1(getComponentAddr(toLabel(type(MockComponent1).name)));
         comp2 = MockComponent2(getComponentAddr(toLabel(type(MockComponent2).name)));

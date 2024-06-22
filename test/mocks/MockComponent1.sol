@@ -12,11 +12,6 @@ contract MockComponent1 is Component {
 
     function DEPENDENCIES() external pure override returns (Dependency[] memory deps) { }
 
-    function ENDPOINTS() external pure override returns (bytes4[] memory endpoints) {
-        endpoints = new bytes4[](1);
-        endpoints[0] = this.testEndpoint1.selector;
-    }
-
     function _init(bytes memory) internal pure override {
         // Mock initialization logic
     }

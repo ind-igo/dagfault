@@ -55,7 +55,7 @@ abstract contract Component {
 
     // TODO add to router's endpoints mapping
     // Hook for defining which functions can be routed through the kernel
-    function ENDPOINTS() external virtual returns (bytes4[] memory endpoints_);
+    // function ENDPOINTS() external virtual returns (bytes4[] memory endpoints_);
 
     function INIT(bytes memory data_) external onlyKernel {
         _init(data_);
@@ -146,7 +146,6 @@ contract Kernel is ERC1967Factory {
 
     LibDAG.DAG private componentGraph;
     mapping(bytes32 => Component) public getComponentForLabel;
-    mapping(bytes4 => address) public getFunctionForEndpoint;
 
     event ActionExecuted(Actions action, address target);
 
@@ -216,15 +215,6 @@ contract Kernel is ERC1967Factory {
             dependency.setPermissions(target_, deps[i].funcSelectors, true);
         }
 
-        // TODO Add endpoints to router
-        bytes4[] memory endpoints = component.ENDPOINTS();
-        for (uint256 i; i < endpoints.length; ++i) {
-            if (getFunctionForEndpoint[endpoints[i]] != address(0)) {
-                revert Kernel_EndpointAlreadyExists();
-            }
-            getFunctionForEndpoint[endpoints[i]] = target_;
-        }
-
         component.INIT(data_);
 
         emit ActionExecuted(Actions.INSTALL, target_);
@@ -262,12 +252,6 @@ contract Kernel is ERC1967Factory {
         componentGraph.removeNode(label);
         getComponentForLabel[label] = Component(address(0));
 
-        // Remove endpoints from router
-        bytes4[] memory endpoints = component.ENDPOINTS();
-        for (uint256 i; i < endpoints.length; ++i) {
-            getFunctionForEndpoint[endpoints[i]] = address(0);
-        }
-    
         emit ActionExecuted(Actions.UNINSTALL, target_);
     }
 
@@ -307,49 +291,7 @@ contract Kernel is ERC1967Factory {
         // TODO needs to be called for all dependencies. Needs DFS
     }
 
-    // TODO Add dynamic routing to components
-    // TODO allow router to load data into transient memory before routing
-
     function isComponentActive(bytes32 label_) public view returns (bool) {
         return componentGraph.getNode(label_).exists;
-    }
-
-    /**
-	 *	@notice delegateCalls the appropriate implementation address for the given incoming function call.
-	 *	@dev The implementation address to delegateCall MUST be retrieved from calling `getImplementationForFunction` with the
-     *       incoming call's function selector.
-	 */
-    fallback() external virtual {
-        if(msg.data.length == 0) return;
-        
-        address implementation = getFunctionForEndpoint[msg.sig];
-        require(implementation != address(0), "Router: function does not exist.");
-        _delegate(implementation);
-    }
-
-    /// @dev delegateCalls an `implementation` smart contract.
-    function _delegate(address implementation) internal virtual {
-        assembly {
-            // Copy msg.data. We take full control of memory in this inline assembly
-            // block because it will not return to Solidity code. We overwrite the
-            // Solidity scratch pad at memory position 0.
-            calldatacopy(0, 0, calldatasize())
-
-            // Call the implementation.
-            // out and outsize are 0 because we don't know the size yet.
-            let result := delegatecall(gas(), implementation, 0, calldatasize(), 0, 0)
-
-            // Copy the returned data.
-            returndatacopy(0, 0, returndatasize())
-
-            switch result
-            // delegatecall returns 0 on error.
-            case 0 {
-                revert(0, returndatasize())
-            }
-            default {
-                return(0, returndatasize())
-            }
-        }
     }
 }

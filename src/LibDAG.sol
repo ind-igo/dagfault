@@ -83,12 +83,14 @@ library LibDAG {
 
             if (current == from) return true;
 
-            bool isVisited = false;
+            bool isVisited;
             for (uint256 i; i < visitedSize; i++) {
-                if (visited[i] == current) {
-                    isVisited = true;
-                    break;
-                }
+                isVisited = visited[i] == current;
+                if (isVisited) break;
+                // if (visited[i] == current) {
+                //     isVisited = true;
+                //     break;
+                // }
             }
 
             if (!isVisited) {
