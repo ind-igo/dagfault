@@ -18,8 +18,6 @@ abstract contract Component {
     Kernel public kernel;
     mapping(Component => mapping(bytes4 => bool)) public permissions;
 
-    uint256 id;
-
     error Component_OnlyKernel(address sender_);
     error Component_NotPermitted();
 
@@ -48,10 +46,6 @@ abstract contract Component {
     function INSTALLED() external view returns (bool) {
         return kernel.isComponentInstalled(LABEL());
     }
-
-    // Hook for defining and configuring dependencies. Returns an array of dependencies.
-    // Gets called during installation of dependents. Should be idempotent.
-    // TODO consider split into read and write dependencies. writes check for cycles
 
     /// @notice Hook for defining and configuring dependencies.
     /// @return An array of dependencies for kernel to record
@@ -90,10 +84,6 @@ abstract contract Component {
     }
 
     // --- Helpers ---------
-
-    function setId(uint256 id_) external onlyKernel {
-        id = id_;
-    }
 
     function toLabel(string memory typeName_) internal pure returns (bytes32) {
         return bytes32(bytes(typeName_));
@@ -170,6 +160,10 @@ contract Kernel {
     modifier verifyComponent(address target_) {
         if (!Component(target_).supportsInterface(type(Component).interfaceId)) revert Kernel_InvalidConfig();
         _;
+    }
+
+    function isComponentInstalled(bytes32 label_) public view returns (bool) {
+        return componentGraph.getNode(getIdForLabel[label_]).exists;
     }
 
     // TODO think about allowing other contracts to install components. ie, a factory
@@ -290,9 +284,6 @@ contract Kernel {
     }
 
 
-    function isComponentInstalled(bytes32 label_) public view returns (bool) {
-        return componentGraph.getNode(getIdForLabel[label_]).exists;
-    }
 
     // Add all read and write dependencies
     // NOTE: This can only add new dependencies. Will also SKIP existing ones.
