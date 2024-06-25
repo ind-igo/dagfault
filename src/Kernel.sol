@@ -2,7 +2,6 @@
 pragma solidity ^0.8.24;
 
 import { UUPSUpgradeable } from "solady/src/utils/UUPSUpgradeable.sol";
-import { ERC1967Factory } from "solady/src/utils/ERC1967Factory.sol";
 import { Initializable } from "solady/src/utils/Initializable.sol";
 import { LibString } from "solady/src/utils/LibString.sol";
 import { LibClone } from "solady/src/utils/LibClone.sol";
@@ -17,7 +16,7 @@ abstract contract Component {
     }
 
     Kernel public kernel;
-    mapping(address => mapping(bytes4 => bool)) public permissions;
+    mapping(Component => mapping(bytes4 => bool)) public permissions;
 
     error Component_OnlyKernel(address sender_);
     error Component_NotPermitted();
@@ -33,7 +32,7 @@ abstract contract Component {
 
     /// @notice Modifier to restrict access to only the kernel or components with permission
     modifier permissioned() {
-        if (msg.sender != address(kernel) && !permissions[msg.sender][msg.sig]) {
+        if (msg.sender != address(kernel) && !permissions[Component(msg.sender)][msg.sig]) {
             revert Component_NotPermitted();
         }
         _;
@@ -44,39 +43,38 @@ abstract contract Component {
         return toLabel("");
     }
 
-    function ACTIVE() external virtual returns (bool) {
-        return kernel.isComponentActive(LABEL());
+    function INSTALLED() external view returns (bool) {
+        return kernel.isComponentInstalled(LABEL());
     }
 
-    // Hook for defining and configuring dependencies
-    // Gets called during installation of dependents
+    // Hook for defining and configuring dependencies. Returns an array of dependencies.
+    // Gets called during installation of dependents. Should be idempotent.
     // TODO consider split into read and write dependencies. writes check for cycles
-    function DEPENDENCIES() external virtual returns (Dependency[] memory);
 
-    // TODO add to router's endpoints mapping
-    // Hook for defining which functions can be routed through the kernel
-    // function ENDPOINTS() external virtual returns (bytes4[] memory endpoints_);
+    /// @notice Hook for defining and configuring dependencies.
+    /// @return An array of dependencies for kernel to record
+    function CONFIG() external virtual returns (Dependency[] memory);
 
+    // Wrapper for internal `_init` call. Can only be called by kernel.
     function INIT(bytes memory data_) external onlyKernel {
         _init(data_);
     }
 
-    // Must be overridden to do custom initialization
+    // Must be overridden to do custom initialization. Will only ever be called once.
     function _init(bytes memory data_) internal virtual;
+
+    function setPermissions(Component component_, bytes4[] memory selectors_, bool isAllowed_) external onlyKernel {
+        // Early return if no selectors
+        if (selectors_[0] == bytes4(0)) return;
+
+        for (uint256 i; i < selectors_.length; i++) {
+            permissions[component_][selectors_[i]] = isAllowed_;
+        }
+    }
 
     /// @notice Function used by kernel when migrating to a new kernel.
     function changeKernel(Kernel newKernel_) external onlyKernel {
         kernel = newKernel_;
-    }
-
-    function setPermissions(address component_, bytes4[] memory selectors_, bool isAllowed_) external onlyKernel {
-        if (selectors_[0] == bytes4(0)) return;
-        for (uint256 i; i < selectors_.length; i++) {
-            // console2.log("permission ");
-            // console2.logBytes32(Component(component_).LABEL());
-            // console2.logBytes4(selectors_[i]);
-            permissions[component_][selectors_[i]] = isAllowed_;
-        }
     }
 
     // ERC-165. Used by Kernel to check if a component is installable.
@@ -85,50 +83,50 @@ abstract contract Component {
         return type(Component).interfaceId == interfaceId_;
     }
 
+    function isMutable() external view virtual returns (bool) {
+        return false;
+    }
+
     // --- Helpers ---------
 
     function toLabel(string memory typeName_) internal pure returns (bytes32) {
         return bytes32(bytes(typeName_));
     }
 
-    // function getComponentAddr(string memory labelString_) internal view returns (address) {
-    //     return getComponentAddr(toLabel(labelString_));
-    // }
-
-    function getComponentAddr(bytes32 contractName_) internal view returns (address) {
-        return address(kernel.getComponentForLabel(contractName_));
+    function getComponentAddr(bytes32 label_) internal view returns (address) {
+        return address(kernel.getComponentForLabel(label_));
     }
 }
 
-// TODO make upgrades via kernel action. Uses transparent proxy pattern.
-// TODO should be UUPS?
-//      - if so, this contract needs to inherit UUPSUpgradeable
-// TODO needs ERC1967Factory to be able to upgrade
-abstract contract MutableComponent is Component, Initializable {
-    // TODO think about versioning
-    /*uint8 public version;*/
+// TODO needs LibClone to be able to upgrade
+abstract contract MutableComponent is Component, UUPSUpgradeable, Initializable {
 
-    // TODO bool to indicate if component is mutable
-    function isMutable() external pure returns (bool) {
-        return true;
+    // Denotes version of the upgrade. Used to ensure `INIT` only gets called once per upgrade.
+    function VERSION() public pure virtual returns (uint8);
+
+    function isMutable() external view override returns (bool) {
+        return proxiableUUID() == _ERC1967_IMPLEMENTATION_SLOT;
     }
 
-    // TODO make sure this works
-    // Special INIT function for upgradeable that can only be called once
-    function _init(bytes memory encodedArgs_) internal override onlyInitializing onlyKernel {
-        /*super._init(encodedArgs_);*/
+    function _authorizeUpgrade(address) internal override onlyKernel {}
+
+    // Guarded init with reinitializer modifier to ensure only gets called once per upgrade.
+    function _init(bytes memory encodedArgs_) internal override reinitializer(VERSION()) {
+        __init(encodedArgs_);
     }
+
+    // Special INIT function for upgradeable that can only be called per install/upgrade
+    function __init(bytes memory encodedArgs_) internal virtual;
 }
 
 /// @notice Kernel contract that manages the installation and execution of components.
 /// @dev    Uses a DAG to manage dependencies and permissions between components
-contract Kernel is ERC1967Factory {
+contract Kernel {
     using LibDAG for LibDAG.DAG;
 
     /// @notice Actions to trigger state changes in the kernel. Passed by the executor
     enum Actions {
         INSTALL,
-        INSTALL_MUT,
         UNINSTALL,
         UPGRADE,
         RUN_SCRIPT,
@@ -161,7 +159,6 @@ contract Kernel is ERC1967Factory {
         _changeExecutor(msg.sender);
     }
 
-    // TODO add real error message
     modifier verifyComponent(address target_) {
         if (!Component(target_).supportsInterface(type(Component).interfaceId)) revert Kernel_InvalidConfig();
         _;
@@ -173,9 +170,8 @@ contract Kernel is ERC1967Factory {
         require(msg.sender == executor);
 
         if (action_ == Actions.INSTALL)          _installComponent(target_, data_);
-        //else if (action_ == Actions.INSTALL_MUT) _installMutableComponent(target_);
         else if (action_ == Actions.UNINSTALL)   _uninstallComponent(target_);
-        //else if (action_ == Actions.UPGRADE)     _upgradeComponent(target_);
+        else if (action_ == Actions.UPGRADE)     _upgradeComponent(target_, data_);
         else if (action_ == Actions.CHANGE_EXEC) _changeExecutor(target_);
         //else if (action_ == Actions.MIGRATE)     _migrateKernel(Kernel(target_));
 
@@ -183,12 +179,16 @@ contract Kernel is ERC1967Factory {
     }
 
     function _installComponent(address target_, bytes memory data_) internal verifyComponent(target_) {
-        Component component = Component(target_);
+        // If component is mutable, deploy its proxy and use that address as the install target
+        // Else, use the target argument as a regular component
+        Component component = Component(target_).isMutable()
+            ? MutableComponent(LibClone.deployERC1967(target_))
+            : Component(target_);
 
         bytes32 label = component.LABEL();
         console2.log("STEP 0");
 
-        if (isComponentActive(label)) revert Kernel_ComponentAlreadyInstalled();
+        if (isComponentInstalled(label)) revert Kernel_ComponentAlreadyInstalled();
         if (label == "") revert Kernel_InvalidConfig();
 
         console2.log("STEP 1");
@@ -198,54 +198,60 @@ contract Kernel is ERC1967Factory {
         getComponentForLabel[label] = component;
 
         console2.log("STEP 2");
+
         // Add all read and write dependencies
-        Component.Dependency[] memory deps = component.DEPENDENCIES();
+        _addDependencies(component);
 
+        component.INIT(data_);
+
+        emit ActionExecuted(Actions.INSTALL, address(component));
+    }
+
+    // Upgrade a mutable component to a new implementation
+    // NOTE: Can add new dependencies, but cannot remove existing ones
+    // NOTE: MAKE SURE UPGRADE IS SAFE. Use provided tools to ensure safety.
+    function _upgradeComponent(address newImpl_, bytes memory data_) internal verifyComponent(newImpl_) {
+        bytes32 label = MutableComponent(newImpl_).LABEL();
+
+        if (!isComponentInstalled(label)) revert Kernel_ComponentNotInstalled();
+
+        MutableComponent componentProxy = MutableComponent(address(getComponentForLabel[label]));
+
+        if (!componentProxy.isMutable()) revert Kernel_ComponentMustBeMutable();
+
+        // Remove all permissions for old implementation
+        Component.Dependency[] memory deps = componentProxy.CONFIG();
         for (uint256 i; i < deps.length; ++i) {
-            // TODO think about how to hit this
-            if (componentGraph.hasEdge(label, deps[i].label)) revert Kernel_InvalidConfig();
-            console2.log("STEP 3...");
-
             Component dependency = getComponentForLabel[deps[i].label];
-
-            // Create edge between component and dependency
-            componentGraph.addEdge(label, deps[i].label);
-
-            // Add permissions for any functions that need it
-            dependency.setPermissions(target_, deps[i].funcSelectors, true);
+            dependency.setPermissions(componentProxy, deps[i].funcSelectors, false);
         }
 
-        component.INIT(data_);
+        // Upgrade to and initialize the new implementation
+        componentProxy.upgradeToAndCall(
+            newImpl_,
+            abi.encodeWithSelector(Component.INIT.selector, data_)
+        );
 
-        emit ActionExecuted(Actions.INSTALL, target_);
+        // Add new dependencies and permissions for the new implementation, if any
+        _addDependencies(componentProxy);
+
+        emit ActionExecuted(Actions.UPGRADE, newImpl_);
     }
-
-    /*
-    // TODO can maybe be special case of install
-    // TODO takes implementation contract and deploys proxy for it, and records proxy
-    function _installMutableComponent(address target_, bytes memory data_) internal verifyComponent(target_) {
-        MutableComponent component = MutableComponent(target_);
-        if (!component.isMutable()) revert Kernel_ComponentMustBeMutable();
-
-        // TODO do same steps as install
-
-        component.INIT(data_);
-    }
-    */
 
     function _uninstallComponent(address target_) internal verifyComponent(target_) {
         Component component = Component(target_);
         bytes32 label = component.LABEL();
-        if (!isComponentActive(label)) revert Kernel_ComponentNotInstalled();
+        if (!isComponentInstalled(label)) revert Kernel_ComponentNotInstalled();
 
         uint256 numDependents = componentGraph.getInDegree(label);
         if (numDependents > 0) revert Kernel_ComponentHasDependents(numDependents);
 
         // Remove all permissions
-        Component.Dependency[] memory deps = component.DEPENDENCIES();
+        Component.Dependency[] memory deps = component.CONFIG();
+
         for (uint256 i; i < deps.length; ++i) {
             Component dependency = getComponentForLabel[deps[i].label];
-            dependency.setPermissions(target_, deps[i].funcSelectors, false);
+            dependency.setPermissions(component, deps[i].funcSelectors, false);
         }
 
         // Remove component node and associated edges from graph
@@ -255,25 +261,6 @@ contract Kernel is ERC1967Factory {
         emit ActionExecuted(Actions.UNINSTALL, target_);
     }
 
-    // TODO call `upgradeAndCall` on the target and its INIT function
-    function _upgradeComponent(address target_, bytes calldata data_) internal verifyComponent(target_) {
-        //Component component = Component(target_);
-
-        // TODO Check if component is installed
-        // TODO get dependencies
-        // TODO check for cycles
-        // TODO add dependencies
-        // TODO add permissions
-
-        // TODO call `upgradeAndCall` on the traget and its INIT function
-        /*upgradeAndCall(
-            target_,
-            abi.encodeWithSelector(Component.INIT.selector),
-            encodedArgs_
-        );*/
-
-        // Emit
-    }
 
     function _runScript(address target_) internal {
         // TODO
@@ -291,7 +278,27 @@ contract Kernel is ERC1967Factory {
         // TODO needs to be called for all dependencies. Needs DFS
     }
 
-    function isComponentActive(bytes32 label_) public view returns (bool) {
+    function isComponentInstalled(bytes32 label_) public view returns (bool) {
         return componentGraph.getNode(label_).exists;
+    }
+
+    // Add all read and write dependencies
+    // NOTE: This can only add new dependencies. Will also SKIP existing ones.
+    // This means it will NOT revert if a component has duplicate dependencies
+    function _addDependencies(Component component_) internal {
+        bytes32 label = component_.LABEL();
+        Component.Dependency[] memory deps = component_.CONFIG();
+
+        for (uint256 i; i < deps.length; ++i) {
+            // If dependency exists, skip
+            if (componentGraph.hasEdge(label, deps[i].label)) continue;
+
+            // Check for new dependencies and add permissions as needed
+            componentGraph.addEdge(label, deps[i].label);
+
+            // Add permissions for any functions that need it
+            Component dependency = getComponentForLabel[deps[i].label];
+            dependency.setPermissions(component_, deps[i].funcSelectors, true);
+        }
     }
 }

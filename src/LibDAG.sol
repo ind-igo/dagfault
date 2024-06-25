@@ -73,8 +73,8 @@ library LibDAG {
 
         bytes32[] memory stack = new bytes32[](self.nodeCount);
         bytes32[] memory visited = new bytes32[](self.nodeCount);
-        uint256 stackSize = 0;
-        uint256 visitedSize = 0;
+        uint256 stackSize;
+        uint256 visitedSize;
 
         stack[stackSize++] = to;
 
@@ -85,12 +85,10 @@ library LibDAG {
 
             bool isVisited;
             for (uint256 i; i < visitedSize; i++) {
-                isVisited = visited[i] == current;
-                if (isVisited) break;
-                // if (visited[i] == current) {
-                //     isVisited = true;
-                //     break;
-                // }
+                if (visited[i] == current) {
+                    isVisited = true;
+                    break;
+                }
             }
 
             if (!isVisited) {
@@ -118,6 +116,11 @@ library LibDAG {
     function getIncomingEdges(DAG storage self, bytes32 id) internal view returns (bytes32[] memory) {
         if (!self.nodes[id].exists) revert NodeDoesNotExist(id);
         return self.nodes[id].incomingEdges;
+    }
+
+    function getOutDegree(DAG storage self, bytes32 id) internal view returns (uint256) {
+        if (!self.nodes[id].exists) revert NodeDoesNotExist(id);
+        return self.nodes[id].outgoingEdges.length;
     }
 
     function getInDegree(DAG storage self, bytes32 id) internal view returns (uint256) {

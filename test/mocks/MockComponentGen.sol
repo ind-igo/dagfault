@@ -25,7 +25,7 @@ contract MockComponentGen is Component {
         return label;
     }
 
-    function DEPENDENCIES() external view override returns (Dependency[] memory) {
+    function CONFIG() external view override returns (Dependency[] memory) {
         return deps;
     }
 

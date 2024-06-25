@@ -11,7 +11,7 @@ contract BadComponent_Cycle is Component {
         return bytes32("MockBadComponent");
     }
 
-    function DEPENDENCIES() external pure override returns (Dependency[] memory) {
+    function CONFIG() external pure override returns (Dependency[] memory) {
         Dependency[] memory deps = new Dependency[](1);
 
     }
@@ -53,7 +53,7 @@ contract MockComponent_DupeDependency is Component {
         return bytes32("DupeDep");
     }
 
-    function DEPENDENCIES() external pure override returns (Dependency[] memory) {
+    function CONFIG() external pure override returns (Dependency[] memory) {
         Dependency[] memory deps = new Dependency[](2);
         deps[0].label = "MockComponent1";
         deps[1].label = "MockComponent1";
@@ -79,7 +79,7 @@ contract MockComponentGen is Component {
         return label;
     }
 
-    function DEPENDENCIES() external override view returns (Dependency[] memory) {
+    function CONFIG() external override view returns (Dependency[] memory) {
         return deps;
     }
 

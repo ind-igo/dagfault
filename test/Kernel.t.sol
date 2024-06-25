@@ -46,13 +46,13 @@ contract KernelTest is Test {
     }
 
     function test_Install() public afterInstallMockComp1 {
-        assertTrue(kernel.isComponentActive(component1.LABEL()));
+        assertTrue(kernel.isComponentInstalled(component1.LABEL()));
         assertEq(address(kernel.getComponentForLabel(component1.LABEL())), address(component1));
     }
 
     function test_Install_WithDeps() public afterInstallMockComp1 afterInstallMockComp2 {
-        assertTrue(kernel.isComponentActive(component1.LABEL()));
-        assertTrue(kernel.isComponentActive(component2.LABEL()));
+        assertTrue(kernel.isComponentInstalled(component1.LABEL()));
+        assertTrue(kernel.isComponentInstalled(component2.LABEL()));
         assertEq(address(kernel.getComponentForLabel(component1.LABEL())), address(component1));
         assertEq(address(kernel.getComponentForLabel(component2.LABEL())), address(component2));
 
@@ -61,7 +61,7 @@ contract KernelTest is Test {
     }
 
     function test_Install_WithInitAndPerms() public afterInstallMockComp1 afterInstallMockComp2 afterInstallMockComp3 {
-        assertTrue(kernel.isComponentActive(component1.LABEL()));
+        assertTrue(kernel.isComponentInstalled(component1.LABEL()));
         assertEq(address(kernel.getComponentForLabel(component1.LABEL())), address(component1));
 
         // Check dependencies were properly set
@@ -87,7 +87,7 @@ contract KernelTest is Test {
 
         kernel.executeAction(Kernel.Actions.INSTALL, address(readOnly), bytes(""));
 
-        assertTrue(kernel.isComponentActive(readOnly.LABEL()));
+        assertTrue(kernel.isComponentInstalled(readOnly.LABEL()));
         assertEq(address(kernel.getComponentForLabel(readOnly.LABEL())), address(readOnly));
     }
 
@@ -112,13 +112,13 @@ contract KernelTest is Test {
 
     function test_Uninstall() public afterInstallMockComp1 {
         kernel.executeAction(Kernel.Actions.UNINSTALL, address(component1), "");
-        assertFalse(kernel.isComponentActive(component1.LABEL()));
+        assertFalse(kernel.isComponentInstalled(component1.LABEL()));
     }
 
     function test_Uninstall2() public afterInstallMockComp1 afterInstallMockComp2 {
         kernel.executeAction(Kernel.Actions.UNINSTALL, address(component2), "");
-        assertTrue(kernel.isComponentActive(component1.LABEL()));
-        assertFalse(kernel.isComponentActive(component2.LABEL()));
+        assertTrue(kernel.isComponentInstalled(component1.LABEL()));
+        assertFalse(kernel.isComponentInstalled(component2.LABEL()));
     }
 
     function testRevert_Uninstall_NotInstalled() public {
