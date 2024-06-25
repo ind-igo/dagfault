@@ -18,6 +18,8 @@ abstract contract Component {
     Kernel public kernel;
     mapping(Component => mapping(bytes4 => bool)) public permissions;
 
+    uint256 id;
+
     error Component_OnlyKernel(address sender_);
     error Component_NotPermitted();
 
@@ -89,6 +91,10 @@ abstract contract Component {
 
     // --- Helpers ---------
 
+    function setId(uint256 id_) external onlyKernel {
+        id = id_;
+    }
+
     function toLabel(string memory typeName_) internal pure returns (bytes32) {
         return bytes32(bytes(typeName_));
     }
@@ -98,8 +104,9 @@ abstract contract Component {
     }
 }
 
-// TODO needs LibClone to be able to upgrade
 abstract contract MutableComponent is Component, UUPSUpgradeable, Initializable {
+
+    constructor(address kernel_) Component(kernel_) {}
 
     // Denotes version of the upgrade. Used to ensure `INIT` only gets called once per upgrade.
     function VERSION() public pure virtual returns (uint8);
@@ -111,12 +118,12 @@ abstract contract MutableComponent is Component, UUPSUpgradeable, Initializable 
     function _authorizeUpgrade(address) internal override onlyKernel {}
 
     // Guarded init with reinitializer modifier to ensure only gets called once per upgrade.
-    function _init(bytes memory encodedArgs_) internal override reinitializer(VERSION()) {
-        __init(encodedArgs_);
+    function _init(bytes memory data_) internal override reinitializer(VERSION()) {
+        __init(data_);
     }
 
     // Special INIT function for upgradeable that can only be called per install/upgrade
-    function __init(bytes memory encodedArgs_) internal virtual;
+    function __init(bytes memory data_) internal virtual;
 }
 
 /// @notice Kernel contract that manages the installation and execution of components.
@@ -127,8 +134,8 @@ contract Kernel {
     /// @notice Actions to trigger state changes in the kernel. Passed by the executor
     enum Actions {
         INSTALL,
-        UNINSTALL,
         UPGRADE,
+        UNINSTALL,
         RUN_SCRIPT,
         CHANGE_EXEC,
         MIGRATE
@@ -144,6 +151,7 @@ contract Kernel {
 
     LibDAG.DAG private componentGraph;
     mapping(bytes32 => Component) public getComponentForLabel;
+    mapping(bytes32 => uint256) public getIdForLabel;
 
     event ActionExecuted(Actions action, address target);
 
@@ -193,9 +201,10 @@ contract Kernel {
 
         console2.log("STEP 1");
 
-        // Add node to graph
-        componentGraph.addNode(label);
+        // Add node to graph and mappings
+        uint256 id = componentGraph.addNode(label);
         getComponentForLabel[label] = component;
+        getIdForLabel[label] = id;
 
         console2.log("STEP 2");
 
@@ -235,15 +244,21 @@ contract Kernel {
         // Add new dependencies and permissions for the new implementation, if any
         _addDependencies(componentProxy);
 
+        // Reconfigure all dependents to point to new implementation
+        _reconfigureDependents(componentProxy);
+
         emit ActionExecuted(Actions.UPGRADE, newImpl_);
     }
 
     function _uninstallComponent(address target_) internal verifyComponent(target_) {
         Component component = Component(target_);
+
         bytes32 label = component.LABEL();
         if (!isComponentInstalled(label)) revert Kernel_ComponentNotInstalled();
 
-        uint256 numDependents = componentGraph.getInDegree(label);
+        uint256 id = getIdForLabel[label];
+
+        uint256 numDependents = componentGraph.getInDegree(id);
         if (numDependents > 0) revert Kernel_ComponentHasDependents(numDependents);
 
         // Remove all permissions
@@ -255,7 +270,7 @@ contract Kernel {
         }
 
         // Remove component node and associated edges from graph
-        componentGraph.removeNode(label);
+        componentGraph.removeNode(id);
         getComponentForLabel[label] = Component(address(0));
 
         emit ActionExecuted(Actions.UNINSTALL, target_);
@@ -274,31 +289,61 @@ contract Kernel {
         // TODO traverse graph and call changeKernel on all components from bottom up
     }
 
-    function _reconfigureDependents(address target_) internal {
-        // TODO needs to be called for all dependencies. Needs DFS
-    }
 
     function isComponentInstalled(bytes32 label_) public view returns (bool) {
-        return componentGraph.getNode(label_).exists;
+        return componentGraph.getNode(getIdForLabel[label_]).exists;
     }
 
     // Add all read and write dependencies
     // NOTE: This can only add new dependencies. Will also SKIP existing ones.
     // This means it will NOT revert if a component has duplicate dependencies
     function _addDependencies(Component component_) internal {
-        bytes32 label = component_.LABEL();
+        uint256 id = getIdForLabel[component_.LABEL()];
         Component.Dependency[] memory deps = component_.CONFIG();
 
         for (uint256 i; i < deps.length; ++i) {
+            uint256 depId = getIdForLabel[deps[i].label];
+
             // If dependency exists, skip
-            if (componentGraph.hasEdge(label, deps[i].label)) continue;
+            if (componentGraph.hasEdge(id, depId)) continue;
 
             // Check for new dependencies and add permissions as needed
-            componentGraph.addEdge(label, deps[i].label);
+            componentGraph.addEdge(id, depId);
 
             // Add permissions for any functions that need it
             Component dependency = getComponentForLabel[deps[i].label];
             dependency.setPermissions(component_, deps[i].funcSelectors, true);
+        }
+    }
+
+    // Use DFS to call CONFIG on all dependents
+    function _reconfigureDependents(MutableComponent component_) internal {
+        uint256 startId = getIdForLabel[component_.LABEL()];
+
+        bool[] memory visited = new bool[](componentGraph.nodeCount + 1);
+        uint256[] memory stack = new uint256[](componentGraph.nodeCount);
+        uint256 stackSize = 0;
+
+        stack[stackSize++] = startId;
+
+        while (stackSize > 0) {
+            uint256 currentId = stack[--stackSize];
+
+            if (!visited[currentId]) {
+                visited[currentId] = true;
+
+                // Process the current node
+                getComponentForLabel[componentGraph.getNode(currentId).data].CONFIG();
+
+                // Push all unvisited incoming neighbors to the stack
+                uint256[] memory incomingEdges = componentGraph.getIncomingEdges(currentId);
+                for (uint256 i; i < incomingEdges.length; i++) {
+                    uint256 neighborId = incomingEdges[i];
+                    if (!visited[neighborId]) {
+                        stack[stackSize++] = neighborId;
+                    }
+                }
+            }
         }
     }
 }

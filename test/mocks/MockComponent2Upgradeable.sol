@@ -1,32 +1,39 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { Component } from "src/Kernel.sol";
+import { MutableComponent } from "src/Kernel.sol";
 import { MockComponent1 } from "./MockComponent1.sol";
 import { console2 } from "forge-std/console2.sol";
 
 // Make dependent on MockComponentOne
-contract MockComponent2 is Component {
+contract MockMutableComponent2 is MutableComponent {
     MockComponent1 public comp1;
 
     uint256 randomNum = 69;
 
-    constructor(address kernel_) Component(kernel_) {}
+    constructor(address kernel_, uint256 version_) MutableComponent(kernel_) {}
 
-    function LABEL() public pure override returns (bytes32) {
-        return toLabel(type(MockComponent2).name);
+    function VERSION() public pure override returns (uint8) {
+        return 1;
     }
 
-    function CONFIG() external pure override returns (Dependency[] memory deps) {
-        deps = new Dependency[](1);
+    function LABEL() public pure override returns (bytes32) {
+        return toLabel(type(MockMutableComponent2).name);
+    }
+
+    function CONFIG() external override returns (Dependency[] memory) {
+        Dependency[] memory deps = new Dependency[](1);
 
         deps[0].label = toLabel(type(MockComponent1).name);
         deps[0].funcSelectors = new bytes4[](1);
         deps[0].funcSelectors[0] = MockComponent1.testPermissionedFunction1.selector;
+
+        comp1 = MockComponent1(getComponentAddr(deps[0].label));
+
+        return deps;
     }
 
-    function _init(bytes memory) internal override {
-        comp1 = MockComponent1(getComponentAddr(toLabel(type(MockComponent1).name)));
+    function __init(bytes memory) internal override {
     }
 
     function testPermissionedFunction2() external view permissioned returns (uint256) {
