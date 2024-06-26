@@ -5,16 +5,16 @@ import { MutableComponent } from "src/Kernel.sol";
 import { MockComponent1 } from "./MockComponent1.sol";
 import { console2 } from "forge-std/console2.sol";
 
-// Make dependent on MockComponentOne
 contract MockMutableComponent2 is MutableComponent {
     MockComponent1 public comp1;
 
     uint256 randomNum = 69;
+    bytes32 public testData = "test";
 
     constructor(address kernel_, uint256 version_) MutableComponent(kernel_) {}
 
     function VERSION() public pure override returns (uint8) {
-        return 1;
+        return 2;
     }
 
     function LABEL() public pure override returns (bytes32) {

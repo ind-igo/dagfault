@@ -75,7 +75,7 @@ abstract contract Component {
 
     // ERC-165. Used by Kernel to check if a component is installable.
     // TODO might need to be virtual, so it can be overridden by mutable components
-    function supportsInterface(bytes4 interfaceId_) external view virtual returns (bool) {
+    function supportsInterface(bytes4 interfaceId_) external pure virtual returns (bool) {
         return type(Component).interfaceId == interfaceId_;
     }
 
@@ -99,7 +99,7 @@ abstract contract MutableComponent is Component, UUPSUpgradeable, Initializable 
     constructor(address kernel_) Component(kernel_) {}
 
     // Denotes version of the upgrade. Used to ensure `INIT` only gets called once per upgrade.
-    function VERSION() public pure virtual returns (uint8);
+    function VERSION() public view virtual returns (uint8);
 
     function isMutable() external view override returns (bool) {
         return proxiableUUID() == _ERC1967_IMPLEMENTATION_SLOT;
@@ -114,6 +114,13 @@ abstract contract MutableComponent is Component, UUPSUpgradeable, Initializable 
 
     // Special INIT function for upgradeable that can only be called per install/upgrade
     function __init(bytes memory data_) internal virtual;
+
+    function supportsInterface(bytes4 interfaceId_) external pure override returns (bool) {
+        return
+            interfaceId_ == type(MutableComponent).interfaceId ||
+            interfaceId_ == type(Component).interfaceId ||
+            interfaceId_ == type(UUPSUpgradeable).interfaceId;
+    }
 }
 
 /// @notice Kernel contract that manages the installation and execution of components.
@@ -135,6 +142,12 @@ contract Kernel {
     struct Instruction {
         Actions action;
         address target;
+    }
+
+    struct ComponentCall {
+        bytes32 componentLabel;
+        bytes4 functionSelector;
+        bytes callData;
     }
 
     address public executor;
@@ -172,8 +185,9 @@ contract Kernel {
         require(msg.sender == executor);
 
         if (action_ == Actions.INSTALL)          _installComponent(target_, data_);
-        else if (action_ == Actions.UNINSTALL)   _uninstallComponent(target_);
         else if (action_ == Actions.UPGRADE)     _upgradeComponent(target_, data_);
+        else if (action_ == Actions.UNINSTALL)   _uninstallComponent(target_);
+        else if (action_ == Actions.RUN_SCRIPT)  _runScript(data_);
         else if (action_ == Actions.CHANGE_EXEC) _changeExecutor(target_);
         //else if (action_ == Actions.MIGRATE)     _migrateKernel(Kernel(target_));
 
@@ -183,12 +197,23 @@ contract Kernel {
     function _installComponent(address target_, bytes memory data_) internal verifyComponent(target_) {
         // If component is mutable, deploy its proxy and use that address as the install target
         // Else, use the target argument as a regular component
-        Component component = Component(target_).isMutable()
-            ? MutableComponent(LibClone.deployERC1967(target_))
-            : Component(target_);
+        // Component component = Component(target_).isMutable()
+        //     ? MutableComponent(LibClone.deployERC1967(target_))
+        //     : Component(target_);
+
+        bool isMutable;
+        Component component;
+        if(Component(target_).isMutable()) {
+            isMutable = true;
+            component = MutableComponent(LibClone.deployERC1967(target_));
+        } else {
+            isMutable = false;
+            component = Component(target_);
+        }
+
+        console2.log("STEP 0");
 
         bytes32 label = component.LABEL();
-        console2.log("STEP 0");
 
         if (isComponentInstalled(label)) revert Kernel_ComponentAlreadyInstalled();
         if (label == "") revert Kernel_InvalidConfig();
@@ -205,7 +230,20 @@ contract Kernel {
         // Add all read and write dependencies
         _addDependencies(component);
 
-        component.INIT(data_);
+        console2.log("STEP 3");
+
+        if (isMutable) {
+            // TODO fix this shit
+            (bool success, ) = address(component).delegatecall(
+                abi.encodeWithSelector(
+                    component.INIT.selector,
+                    data_
+                )
+            );
+            if (!success) revert Kernel_CannotInstall();
+        } else {
+            component.INIT(data_);
+        }
 
         emit ActionExecuted(Actions.INSTALL, address(component));
     }
@@ -218,9 +256,11 @@ contract Kernel {
 
         if (!isComponentInstalled(label)) revert Kernel_ComponentNotInstalled();
 
+        // Get previous version by label
         MutableComponent componentProxy = MutableComponent(address(getComponentForLabel[label]));
 
         if (!componentProxy.isMutable()) revert Kernel_ComponentMustBeMutable();
+        if (MutableComponent(newImpl_).VERSION() <= componentProxy.VERSION()) revert Kernel_InvalidConfig();
 
         // Remove all permissions for old implementation
         Component.Dependency[] memory deps = componentProxy.CONFIG();
@@ -270,9 +310,23 @@ contract Kernel {
         emit ActionExecuted(Actions.UNINSTALL, target_);
     }
 
-
-    function _runScript(address target_) internal {
-        // TODO
+    function _runScript(bytes memory scriptData) internal {
+        (ComponentCall[] memory calls) = abi.decode(scriptData, (ComponentCall[]));
+    
+        for (uint i = 0; i < calls.length; i++) {
+            Component component = getComponentForLabel[calls[i].componentLabel];
+            require(address(component) != address(0), "Component not found");
+        
+            (bool success, bytes memory result) = address(component).call(
+                abi.encodePacked(calls[i].functionSelector, calls[i].callData)
+            );
+        
+            if (!success) {
+                assembly {
+                    revert(add(result, 32), mload(result))
+                }
+            }
+        }
     }
 
     function _changeExecutor(address target_) internal {
@@ -283,7 +337,7 @@ contract Kernel {
         // TODO traverse graph and call changeKernel on all components from bottom up
     }
 
-
+    // === HELPER FUNCTIONS ======================================================
 
     // Add all read and write dependencies
     // NOTE: This can only add new dependencies. Will also SKIP existing ones.
@@ -335,6 +389,32 @@ contract Kernel {
                     }
                 }
             }
+        }
+    }
+
+    // === VIEW FUNCTIONS ======================================================
+
+    function getComponentDetails(bytes32 label) public view returns (
+        address componentAddress,
+        bytes32[] memory dependencyLabels,
+        bytes32[] memory dependentLabels
+    ) {
+        uint256 id = getIdForLabel[label];
+        LibDAG.Node memory node = componentGraph.getNode(id);
+        require(node.exists, "Component does not exist");
+        
+        componentAddress = address(getComponentForLabel[label]);
+        
+        // Convert dependency (outgoing) edges to labels
+        dependencyLabels = new bytes32[](node.outgoingEdges.length);
+        for (uint256 i = 0; i < node.outgoingEdges.length; i++) {
+            dependencyLabels[i] = bytes32(componentGraph.getNode(node.outgoingEdges[i]).data);
+        }
+        
+        // Convert dependent (incoming) edges to labels
+        dependentLabels = new bytes32[](node.incomingEdges.length);
+        for (uint256 i = 0; i < node.incomingEdges.length; i++) {
+            dependentLabels[i] = bytes32(componentGraph.getNode(node.incomingEdges[i]).data);
         }
     }
 }

@@ -5,9 +5,12 @@ import "forge-std/Test.sol";
 
 import { Kernel, Component, MutableComponent } from "src/Kernel.sol";
 import "test/mocks/MockComponentGen.sol";
+import "test/mocks/MockMutableComponentGen.sol";
 import "test/mocks/MockComponent1.sol";
 import "test/mocks/MockComponent2.sol";
 import "test/mocks/MockComponent3.sol";
+
+import {console2} from "forge-std/console2.sol";
 
 /*
 todo tests:
@@ -112,6 +115,7 @@ contract KernelTest is Test {
     // TODO might not be possible
     // function testRevert_Install_BadConfig() public { }
 
+    /*
     function test_Upgrade() public afterInstallMockComp1 afterInstallMockComp2 {
         MutableComponent impl2 = MutableComponent(address(new MockComponentGen(
             address(kernel),
@@ -123,7 +127,35 @@ contract KernelTest is Test {
 
         assertTrue(kernel.isComponentInstalled(newComponent1.LABEL()));
         assertFalse(kernel.isComponentInstalled(component1.LABEL()));
+    }*/
+
+    function test_Upgrade_MutableComponent() public {
+        // Create initial mutable component
+        Component.Dependency[] memory initialDeps = new Component.Dependency[](1);
+        MockMutableComponentGen initialComponent = new MockMutableComponentGen(address(kernel), "TestMutable", initialDeps);
+
+        bytes32 label = initialComponent.LABEL();
+        console2.log("Initial component label: ");
+        console2.log(string(abi.encode(label)));
+        
+        console2.log(address(this));
+        console2.log(address(kernel));
+        // Install initial component
+        kernel.executeAction(Kernel.Actions.INSTALL, address(initialComponent), "");
+
+        // Create new version of the component
+        MockMutableComponentGen newComponent = new MockMutableComponentGen(address(kernel), "TestMutable", initialDeps);
+        newComponent.setVersion(2);
+
+        // Perform upgrade
+        kernel.executeAction(Kernel.Actions.UPGRADE, address(initialComponent), abi.encode(address(newComponent)));
+
+        // Verify upgrade
+        assertTrue(kernel.isComponentInstalled(newComponent.LABEL()));
+        assertEq(address(kernel.getComponentForLabel(newComponent.LABEL())), address(newComponent));
+        assertEq(newComponent.VERSION(), 2);
     }
+
 
     function test_Uninstall() public afterInstallMockComp1 {
         kernel.executeAction(Kernel.Actions.UNINSTALL, address(component1), "");
