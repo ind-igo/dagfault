@@ -3,16 +3,16 @@ pragma solidity ^0.8.24;
 
 import { Kernel, Component, MutableComponent } from "src/Kernel.sol";
 import {console2} from "forge-std/console2.sol";
+import {Initializable} from "solady/src/utils/Initializable.sol";
 
 contract MockMutableComponentGen is MutableComponent {
-    bytes32 immutable label;
+    bytes32 label;
     uint8 private version;
     Component.Dependency[] public dependencies;
     mapping(bytes4 => bool) public functionCalled;
     bool initCalled;
 
-    constructor(address kernel_, bytes32 label_, Component.Dependency[] memory deps_) 
-        MutableComponent(kernel_) 
+    constructor(bytes32 label_, Component.Dependency[] memory deps_)
     {
         label = label_;
         version = 1;
@@ -36,9 +36,15 @@ contract MockMutableComponentGen is MutableComponent {
         return dependencies;
     }
 
-    function __init(bytes memory) internal override {
-        console2.log("IN INIT");
-        // Custom initialization logic can be added here
+    function INIT(bytes memory data_) internal override {
+        Component.Dependency[] memory deps_;
+
+        (label, deps_) = abi.decode(data_, (bytes32, Component.Dependency[]));
+
+        version = 1;
+
+        setDependencies(deps_);
+
         initCalled = true;
     }
 
@@ -48,8 +54,8 @@ contract MockMutableComponentGen is MutableComponent {
     }
 
     // Add more functions as needed for testing
-    function testFunction() public {
-        functionCalled[this.testFunction.selector] = true;
+    function functionTest() public {
+        functionCalled[this.functionTest.selector] = true;
     }
 
     function permissionedFunction() public permissioned {

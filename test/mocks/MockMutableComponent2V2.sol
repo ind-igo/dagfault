@@ -8,10 +8,8 @@ import { console2 } from "forge-std/console2.sol";
 contract MockMutableComponent2 is MutableComponent {
     MockComponent1 public comp1;
 
-    uint256 randomNum = 69;
-    bytes32 public testData = "test";
-
-    constructor(address kernel_, uint256 version_) MutableComponent(kernel_) {}
+    uint256 public number;
+    bytes32 public testData;
 
     function VERSION() public pure override returns (uint8) {
         return 2;
@@ -26,21 +24,22 @@ contract MockMutableComponent2 is MutableComponent {
 
         deps[0].label = toLabel(type(MockComponent1).name);
         deps[0].funcSelectors = new bytes4[](1);
-        deps[0].funcSelectors[0] = MockComponent1.testPermissionedFunction1.selector;
+        deps[0].funcSelectors[0] = MockComponent1.permissionedFunction1.selector;
 
         comp1 = MockComponent1(getComponentAddr(deps[0].label));
 
         return deps;
     }
 
-    function __init(bytes memory) internal override {
+    function INIT(bytes memory data_) internal override {
+        (number, testData) = abi.decode(data_, (uint256, bytes32));
     }
 
-    function testPermissionedFunction2() external view permissioned returns (uint256) {
-        return 1;
+    function permissionedFunction2() external view permissioned returns (uint256) {
+        return 2;
     }
 
     function callPermissionedFunction1() external view returns (uint256) {
-        return comp1.testPermissionedFunction1();
+        return comp1.permissionedFunction1();
     }
 }

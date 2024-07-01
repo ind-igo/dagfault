@@ -9,7 +9,7 @@ import { LibDAG } from "./LibDAG.sol";
 
 import { console2 } from "forge-std/console2.sol";
 
-abstract contract Component {
+abstract contract Component is Initializable {
     struct Dependency {
         bytes32 label;
         bytes4[] funcSelectors;
@@ -20,10 +20,6 @@ abstract contract Component {
 
     error Component_OnlyKernel(address sender_);
     error Component_NotPermitted();
-
-    constructor(address kernel_) {
-        kernel = Kernel(kernel_);
-    }
 
     modifier onlyKernel() {
         if (msg.sender != address(kernel)) revert Component_OnlyKernel(msg.sender);
@@ -38,28 +34,42 @@ abstract contract Component {
         _;
     }
 
-    // Must be overriden to actual name of the component or else will fail on install
+    // --- Component API ---------
+
+    // Must be overidden to actual name of the component or else will fail on install
     function LABEL() public view virtual returns (bytes32) {
         return toLabel("");
     }
 
-    function INSTALLED() external view returns (bool) {
-        return kernel.isComponentInstalled(LABEL());
+    // Denotes version of the upgrade. Used to ensure `INIT` only gets called once per version.
+    function VERSION() public view virtual returns (uint8) {
+        return 1;
     }
+
+    // Custom initialization logic. Only called once per version.
+    function INIT(bytes memory data_) internal virtual;
 
     /// @notice Hook for defining and configuring dependencies.
     /// @return An array of dependencies for kernel to record
     function CONFIG() external virtual returns (Dependency[] memory);
 
-    // Wrapper for internal `_init` call. Can only be called by kernel.
-    function INIT(bytes memory data_) external onlyKernel {
-        _init(data_);
+    // --- Kernel API ---------
+
+    // Initializer for setting kernel and calling custom initialization logic.
+    // Called by kernel when installing/upgrading a component.
+    function initializeComponent(address kernel_, bytes memory data_)
+        external
+        reinitializer(VERSION())
+    {
+        kernel = Kernel(kernel_);
+        INIT(data_);
     }
 
-    // Must be overridden to do custom initialization. Will only ever be called once.
-    function _init(bytes memory data_) internal virtual;
-
-    function setPermissions(Component component_, bytes4[] memory selectors_, bool isAllowed_) external onlyKernel {
+    function setPermissions(
+        Component component_,
+        bytes4[] memory selectors_,
+        bool isAllowed_
+    ) external onlyKernel {
         // Early return if no selectors
         if (selectors_[0] == bytes4(0)) return;
 
@@ -68,19 +78,27 @@ abstract contract Component {
         }
     }
 
+    // TODO
     /// @notice Function used by kernel when migrating to a new kernel.
     function changeKernel(Kernel newKernel_) external onlyKernel {
         kernel = newKernel_;
+    }
+
+    // --- Query Functions ---------
+
+    // Return if the component is installed in the kernel
+    function isInstalled() external view returns (bool) {
+        return kernel.isComponentInstalled(LABEL());
+    }
+
+    function isMutable() external view virtual returns (bool) {
+        return false;
     }
 
     // ERC-165. Used by Kernel to check if a component is installable.
     // TODO might need to be virtual, so it can be overridden by mutable components
     function supportsInterface(bytes4 interfaceId_) external pure virtual returns (bool) {
         return type(Component).interfaceId == interfaceId_;
-    }
-
-    function isMutable() external view virtual returns (bool) {
-        return false;
     }
 
     // --- Helpers ---------
@@ -94,32 +112,21 @@ abstract contract Component {
     }
 }
 
-abstract contract MutableComponent is Component, UUPSUpgradeable, Initializable {
+abstract contract MutableComponent is Component, UUPSUpgradeable {
 
-    constructor(address kernel_) Component(kernel_) {}
-
-    // Denotes version of the upgrade. Used to ensure `INIT` only gets called once per upgrade.
-    function VERSION() public view virtual returns (uint8);
-
-    function isMutable() external view override returns (bool) {
-        return proxiableUUID() == _ERC1967_IMPLEMENTATION_SLOT;
+    function _authorizeUpgrade(address) internal override onlyKernel {
+        console2.log("IN AUTH UPGRADE");
+        console2.log("kernel", address(kernel));
     }
 
-    function _authorizeUpgrade(address) internal override onlyKernel {}
-
-    // Guarded init with reinitializer modifier to ensure only gets called once per upgrade.
-    function _init(bytes memory data_) internal override reinitializer(VERSION()) {
-        __init(data_);
+    function isMutable() external pure override returns (bool) {
+        return true;
     }
-
-    // Special INIT function for upgradeable that can only be called per install/upgrade
-    function __init(bytes memory data_) internal virtual;
 
     function supportsInterface(bytes4 interfaceId_) external pure override returns (bool) {
         return
-            interfaceId_ == type(MutableComponent).interfaceId ||
             interfaceId_ == type(Component).interfaceId ||
-            interfaceId_ == type(UUPSUpgradeable).interfaceId;
+            interfaceId_ == type(MutableComponent).interfaceId;
     }
 }
 
@@ -159,6 +166,7 @@ contract Kernel {
     event ActionExecuted(Actions action, address target);
 
     error Kernel_CannotInstall();
+    error Kernel_ComponentNotFound();
     error Kernel_ComponentAlreadyInstalled();
     error Kernel_ComponentNotInstalled();
     error Kernel_ComponentMustBeMutable();
@@ -197,19 +205,9 @@ contract Kernel {
     function _installComponent(address target_, bytes memory data_) internal verifyComponent(target_) {
         // If component is mutable, deploy its proxy and use that address as the install target
         // Else, use the target argument as a regular component
-        // Component component = Component(target_).isMutable()
-        //     ? MutableComponent(LibClone.deployERC1967(target_))
-        //     : Component(target_);
-
-        bool isMutable;
-        Component component;
-        if(Component(target_).isMutable()) {
-            isMutable = true;
-            component = MutableComponent(LibClone.deployERC1967(target_));
-        } else {
-            isMutable = false;
-            component = Component(target_);
-        }
+        Component component = Component(target_).isMutable()
+            ? MutableComponent(LibClone.deployERC1967(target_))
+            : Component(target_);
 
         console2.log("STEP 0");
 
@@ -217,6 +215,9 @@ contract Kernel {
 
         if (isComponentInstalled(label)) revert Kernel_ComponentAlreadyInstalled();
         if (label == "") revert Kernel_InvalidConfig();
+
+        // Initialize component to set kernel and pass init data
+        component.initializeComponent(address(this), data_);
 
         console2.log("STEP 1");
 
@@ -229,21 +230,6 @@ contract Kernel {
 
         // Add all read and write dependencies
         _addDependencies(component);
-
-        console2.log("STEP 3");
-
-        if (isMutable) {
-            // TODO fix this shit
-            (bool success, ) = address(component).delegatecall(
-                abi.encodeWithSelector(
-                    component.INIT.selector,
-                    data_
-                )
-            );
-            if (!success) revert Kernel_CannotInstall();
-        } else {
-            component.INIT(data_);
-        }
 
         emit ActionExecuted(Actions.INSTALL, address(component));
     }
@@ -272,7 +258,11 @@ contract Kernel {
         // Upgrade to and initialize the new implementation
         componentProxy.upgradeToAndCall(
             newImpl_,
-            abi.encodeWithSelector(Component.INIT.selector, data_)
+            abi.encodeWithSelector(
+                Component.initializeComponent.selector,
+                address(this),
+                data_
+            )
         );
 
         // Add new dependencies and permissions for the new implementation, if any
@@ -312,15 +302,15 @@ contract Kernel {
 
     function _runScript(bytes memory scriptData) internal {
         (ComponentCall[] memory calls) = abi.decode(scriptData, (ComponentCall[]));
-    
+
         for (uint i = 0; i < calls.length; i++) {
             Component component = getComponentForLabel[calls[i].componentLabel];
-            require(address(component) != address(0), "Component not found");
-        
+            if (address(component) == address(0)) revert Kernel_ComponentNotFound();
+
             (bool success, bytes memory result) = address(component).call(
                 abi.encodePacked(calls[i].functionSelector, calls[i].callData)
             );
-        
+
             if (!success) {
                 assembly {
                     revert(add(result, 32), mload(result))
@@ -341,8 +331,9 @@ contract Kernel {
 
     // Add all read and write dependencies
     // NOTE: This can only add new dependencies. Will also SKIP existing ones.
-    // This means it will NOT revert if a component has duplicate dependencies
+    //       This means it will NOT revert if a component has duplicate dependencies.
     function _addDependencies(Component component_) internal {
+        console2.log("component addr", address(component_));
         uint256 id = getIdForLabel[component_.LABEL()];
         Component.Dependency[] memory deps = component_.CONFIG();
 
@@ -352,6 +343,7 @@ contract Kernel {
             // If dependency exists, skip
             if (componentGraph.hasEdge(id, depId)) continue;
 
+            console2.log("HERE");
             // Check for new dependencies and add permissions as needed
             componentGraph.addEdge(id, depId);
 
@@ -402,15 +394,15 @@ contract Kernel {
         uint256 id = getIdForLabel[label];
         LibDAG.Node memory node = componentGraph.getNode(id);
         require(node.exists, "Component does not exist");
-        
+
         componentAddress = address(getComponentForLabel[label]);
-        
+
         // Convert dependency (outgoing) edges to labels
         dependencyLabels = new bytes32[](node.outgoingEdges.length);
         for (uint256 i = 0; i < node.outgoingEdges.length; i++) {
             dependencyLabels[i] = bytes32(componentGraph.getNode(node.outgoingEdges[i]).data);
         }
-        
+
         // Convert dependent (incoming) edges to labels
         dependentLabels = new bytes32[](node.incomingEdges.length);
         for (uint256 i = 0; i < node.incomingEdges.length; i++) {

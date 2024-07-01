@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import { Component } from "src/Kernel.sol";
 
 contract MockComponent1 is Component {
-    constructor(address kernel_) Component(kernel_) { }
 
     function LABEL() public pure override returns (bytes32) {
         return toLabel(type(MockComponent1).name);
@@ -12,15 +11,11 @@ contract MockComponent1 is Component {
 
     function CONFIG() external pure override returns (Dependency[] memory deps) {}
 
-    function _init(bytes memory) internal pure override {
+    function INIT(bytes memory) internal pure override {
         // Mock initialization logic
     }
 
-    function testPermissionedFunction1() external view permissioned returns (uint256) {
+    function permissionedFunction1() external view permissioned returns (uint256) {
         return 1;
-    }
-
-    function testEndpoint1() external pure returns (uint256) {
-        return 2;
     }
 }

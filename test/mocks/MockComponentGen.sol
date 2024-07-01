@@ -8,12 +8,9 @@ contract MockComponentGen is Component {
     Dependency[] public deps;
 
     constructor(
-        address kernel_,
         bytes32 label_,
         Dependency[] memory deps_
-    )
-        Component(kernel_)
-    {
+    ) {
         label = label_;
 
         for (uint256 i; i < deps_.length; i++) {
@@ -29,5 +26,5 @@ contract MockComponentGen is Component {
         return deps;
     }
 
-    function _init(bytes memory) internal override { }
+    function INIT(bytes memory) internal pure override {}
 }

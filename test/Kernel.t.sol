@@ -9,6 +9,8 @@ import "test/mocks/MockMutableComponentGen.sol";
 import "test/mocks/MockComponent1.sol";
 import "test/mocks/MockComponent2.sol";
 import "test/mocks/MockComponent3.sol";
+import {MockMutableComponent2 as MockMutableV1} from "test/mocks/MockMutableComponent2V1.sol";
+import {MockMutableComponent2 as MockMutableV2} from "test/mocks/MockMutableComponent2V2.sol";
 
 import {console2} from "forge-std/console2.sol";
 
@@ -27,9 +29,9 @@ contract KernelTest is Test {
 
     function setUp() public {
         kernel = new Kernel();
-        component1 = new MockComponent1(address(kernel));
-        component2 = new MockComponent2(address(kernel));
-        component3 = new MockComponent3(address(kernel));
+        component1 = new MockComponent1();
+        component2 = new MockComponent2();
+        component3 = new MockComponent3();
     }
 
     modifier afterInstallMockComp1() {
@@ -88,7 +90,7 @@ contract KernelTest is Test {
         readDep[0] = Component.Dependency({ label: component1.LABEL(), funcSelectors: funcSelectors });
 
         // Make new component with read only dependency
-        Component readOnly = new MockComponentGen(address(kernel), "ReadOnlyDep", readDep);
+        Component readOnly = new MockComponentGen("ReadOnlyDep", readDep);
 
         kernel.executeAction(Kernel.Actions.INSTALL, address(readOnly), bytes(""));
 
@@ -108,54 +110,42 @@ contract KernelTest is Test {
     function testRevert_Install_AlreadyExists() public afterInstallMockComp1 {
         vm.expectRevert(Kernel.Kernel_ComponentAlreadyInstalled.selector);
         kernel.executeAction(Kernel.Actions.INSTALL, address(component1), bytes(""));
-
-        // Check that endpoint 
     }
 
-    // TODO might not be possible
-    // function testRevert_Install_BadConfig() public { }
-
-    /*
-    function test_Upgrade() public afterInstallMockComp1 afterInstallMockComp2 {
-        MutableComponent impl2 = MutableComponent(address(new MockComponentGen(
-            address(kernel),
-            "MockComponent2",
-            new Component.Dependency[](0)
-        )));
-        MockComponent1 newComponent1 = new MockComponent1(address(kernel));
-        kernel.executeAction(Kernel.Actions.UPGRADE, address(component1), abi.encode(address(newComponent1)));
-
-        assertTrue(kernel.isComponentInstalled(newComponent1.LABEL()));
-        assertFalse(kernel.isComponentInstalled(component1.LABEL()));
-    }*/
-
-    function test_Upgrade_MutableComponent() public {
+    function test_Upgrade() public afterInstallMockComp1 {
         // Create initial mutable component
         Component.Dependency[] memory initialDeps = new Component.Dependency[](1);
-        MockMutableComponentGen initialComponent = new MockMutableComponentGen(address(kernel), "TestMutable", initialDeps);
 
+        MockMutableV1 initialComponent = new MockMutableV1();
         bytes32 label = initialComponent.LABEL();
-        console2.log("Initial component label: ");
-        console2.log(string(abi.encode(label)));
-        
-        console2.log(address(this));
-        console2.log(address(kernel));
+
         // Install initial component
         kernel.executeAction(Kernel.Actions.INSTALL, address(initialComponent), "");
 
         // Create new version of the component
-        MockMutableComponentGen newComponent = new MockMutableComponentGen(address(kernel), "TestMutable", initialDeps);
-        newComponent.setVersion(2);
+        MockMutableV2 newComponent = new MockMutableV2();
 
         // Perform upgrade
-        kernel.executeAction(Kernel.Actions.UPGRADE, address(initialComponent), abi.encode(address(newComponent)));
+        bytes32 testData = "test deez nutz";
+        bytes memory upgradeData = abi.encode(420, testData);
+        kernel.executeAction(Kernel.Actions.UPGRADE, address(newComponent), upgradeData);
+
+        MockMutableV2 proxy = MockMutableV2(
+            address(kernel.getComponentForLabel(newComponent.LABEL()))
+        );
+        bytes32 _ERC1967_IMPLEMENTATION_SLOT =
+            0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+        bytes32 v = vm.load(address(proxy), _ERC1967_IMPLEMENTATION_SLOT);
 
         // Verify upgrade
         assertTrue(kernel.isComponentInstalled(newComponent.LABEL()));
-        assertEq(address(kernel.getComponentForLabel(newComponent.LABEL())), address(newComponent));
-        assertEq(newComponent.VERSION(), 2);
+        assertEq(address(uint160(uint256(v))), address(newComponent));
+        assertEq(proxy.VERSION(), 2);
+        assertEq(proxy.number(), 420);
+        assertEq(proxy.testData(), testData);
     }
 
+    // TODO function test_Upgrade_withCycle() public {}
 
     function test_Uninstall() public afterInstallMockComp1 {
         kernel.executeAction(Kernel.Actions.UNINSTALL, address(component1), "");

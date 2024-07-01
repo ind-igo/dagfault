@@ -11,7 +11,7 @@ contract MockComponent2 is Component {
 
     uint256 randomNum = 69;
 
-    constructor(address kernel_) Component(kernel_) {}
+    /*constructor(address kernel_) Component(kernel_) {}*/
 
     function LABEL() public pure override returns (bytes32) {
         return toLabel(type(MockComponent2).name);
@@ -22,18 +22,18 @@ contract MockComponent2 is Component {
 
         deps[0].label = toLabel(type(MockComponent1).name);
         deps[0].funcSelectors = new bytes4[](1);
-        deps[0].funcSelectors[0] = MockComponent1.testPermissionedFunction1.selector;
+        deps[0].funcSelectors[0] = MockComponent1.permissionedFunction1.selector;
     }
 
-    function _init(bytes memory) internal override {
+    function INIT(bytes memory) internal override {
         comp1 = MockComponent1(getComponentAddr(toLabel(type(MockComponent1).name)));
     }
 
-    function testPermissionedFunction2() external view permissioned returns (uint256) {
+    function permissionedFunction2() external view permissioned returns (uint256) {
         return 1;
     }
 
     function callPermissionedFunction1() external view returns (uint256) {
-        return comp1.testPermissionedFunction1();
+        return comp1.permissionedFunction1();
     }
 }
