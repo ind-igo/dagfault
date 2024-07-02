@@ -17,7 +17,7 @@ contract MockComponent2 is Component {
         return toLabel(type(MockComponent2).name);
     }
 
-    function CONFIG() external pure override returns (Dependency[] memory deps) {
+    function CONFIG() internal pure override returns (Dependency[] memory deps) {
         deps = new Dependency[](1);
 
         deps[0].label = toLabel(type(MockComponent1).name);

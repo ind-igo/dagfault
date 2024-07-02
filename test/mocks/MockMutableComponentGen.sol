@@ -14,6 +14,7 @@ contract MockMutableComponentGen is MutableComponent {
 
     constructor(bytes32 label_, Component.Dependency[] memory deps_)
     {
+        console2.logBytes32(label_);
         label = label_;
         version = 1;
 
@@ -32,17 +33,16 @@ contract MockMutableComponentGen is MutableComponent {
         version = newVersion;
     }
 
-    function CONFIG() external view override returns (Component.Dependency[] memory) {
+    function CONFIG() internal view override returns (Component.Dependency[] memory) {
         return dependencies;
     }
 
     function INIT(bytes memory data_) internal override {
-        Component.Dependency[] memory deps_;
-
-        (label, deps_) = abi.decode(data_, (bytes32, Component.Dependency[]));
-
         version = 1;
 
+        Component.Dependency[] memory deps_;
+        (label, deps_) = abi.decode(data_, (bytes32, Component.Dependency[]));
+        // (Component.Dependency[] memory deps_) = abi.decode(data_, (Component.Dependency[]));
         setDependencies(deps_);
 
         initCalled = true;

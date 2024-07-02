@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import "forge-std/Test.sol";
 
 import { Kernel, Component, MutableComponent } from "src/Kernel.sol";
+import {LibDAG} from "src/LibDAG.sol";
 import "test/mocks/MockComponentGen.sol";
 import "test/mocks/MockMutableComponentGen.sol";
 import "test/mocks/MockComponent1.sol";
@@ -114,7 +115,7 @@ contract KernelTest is Test {
 
     function test_Upgrade() public afterInstallMockComp1 {
         // Create initial mutable component
-        Component.Dependency[] memory initialDeps = new Component.Dependency[](1);
+        // Component.Dependency[] memory initialDeps = new Component.Dependency[](1);
 
         MockMutableV1 initialComponent = new MockMutableV1();
         bytes32 label = initialComponent.LABEL();
@@ -133,19 +134,61 @@ contract KernelTest is Test {
         MockMutableV2 proxy = MockMutableV2(
             address(kernel.getComponentForLabel(newComponent.LABEL()))
         );
-        bytes32 _ERC1967_IMPLEMENTATION_SLOT =
+        bytes32 ERC1967_IMPLEMENTATION_SLOT =
             0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
-        bytes32 v = vm.load(address(proxy), _ERC1967_IMPLEMENTATION_SLOT);
+        bytes32 v = vm.load(address(proxy), ERC1967_IMPLEMENTATION_SLOT);
 
         // Verify upgrade
         assertTrue(kernel.isComponentInstalled(newComponent.LABEL()));
         assertEq(address(uint160(uint256(v))), address(newComponent));
+        assertEq(proxy.LABEL(), label);
         assertEq(proxy.VERSION(), 2);
         assertEq(proxy.number(), 420);
         assertEq(proxy.testData(), testData);
     }
 
-    // TODO function test_Upgrade_withCycle() public {}
+    // function test_PreventCyclicDependency() public {
+    function testRevert_Upgrade_withCycle() public {
+        // Create component A
+        bytes32 labelA = bytes32("ComponentA");
+        Component.Dependency[] memory depsA = new Component.Dependency[](1);
+        MockMutableComponentGen componentA = new MockMutableComponentGen(
+            labelA,
+            depsA
+        );
+        bytes memory componentAData = abi.encode(labelA, depsA);
+        kernel.executeAction(Kernel.Actions.INSTALL, address(componentA), componentAData);
+
+        // Create component B with a dependency on A
+        Component.Dependency[] memory depsB = new Component.Dependency[](1);
+        depsB[0] = Component.Dependency({
+            label: componentA.LABEL(),
+            funcSelectors: new bytes4[](1)
+        });
+        depsB[0].funcSelectors[0] = componentA.permissionedFunction.selector;
+        MockMutableComponentGen componentB = new MockMutableComponentGen(
+            bytes32("ComponentB"),
+            depsB
+        );
+        kernel.executeAction(Kernel.Actions.INSTALL, address(componentB), "");
+
+        // Now try to upgrade component A to depend on B, which would create a cycle
+        Component.Dependency[] memory newDepsA = new Component.Dependency[](1);
+        newDepsA[0] = Component.Dependency({
+            label: componentB.LABEL(),
+            funcSelectors: new bytes4[](1)
+        });
+        newDepsA[0].funcSelectors[0] = componentB.permissionedFunction.selector;
+        MockMutableComponentGen newComponentA = new MockMutableComponentGen(
+            bytes32("ComponentA"),
+            newDepsA
+        );
+        newComponentA.setVersion(2);
+
+        // This should revert due to creating a cyclic dependency
+        vm.expectRevert(LibDAG.AddingEdgeCreatesCycle.selector);
+        kernel.executeAction(Kernel.Actions.UPGRADE, address(componentA), abi.encode(address(newComponentA)));
+    }
 
     function test_Uninstall() public afterInstallMockComp1 {
         kernel.executeAction(Kernel.Actions.UNINSTALL, address(component1), "");

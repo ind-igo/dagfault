@@ -34,7 +34,7 @@ abstract contract Component is Initializable {
         _;
     }
 
-    // --- Component API ---------
+    // --- Component API ------------------------------------------------------
 
     // Must be overidden to actual name of the component or else will fail on install
     function LABEL() public view virtual returns (bytes32) {
@@ -51,9 +51,9 @@ abstract contract Component is Initializable {
 
     /// @notice Hook for defining and configuring dependencies.
     /// @return An array of dependencies for kernel to record
-    function CONFIG() external virtual returns (Dependency[] memory);
+    function CONFIG() internal virtual returns (Dependency[] memory);
 
-    // --- Kernel API ---------
+    // --- Kernel API ------------------------------------------------------
 
     // Initializer for setting kernel and calling custom initialization logic.
     // Called by kernel when installing/upgrading a component.
@@ -61,8 +61,14 @@ abstract contract Component is Initializable {
         external
         reinitializer(VERSION())
     {
+        console2.log("INITIALIZING COMPONENT");
         kernel = Kernel(kernel_);
         INIT(data_);
+    }
+
+    // Called by kernel to configure dependencies and return permissions needed for a component.
+    function configureDependencies() external onlyKernel returns (Dependency[] memory) {
+        return CONFIG();
     }
 
     function setPermissions(
@@ -84,7 +90,7 @@ abstract contract Component is Initializable {
         kernel = newKernel_;
     }
 
-    // --- Query Functions ---------
+    // --- Query Functions ---------------------------------------------
 
     // Return if the component is installed in the kernel
     function isInstalled() external view returns (bool) {
@@ -101,7 +107,7 @@ abstract contract Component is Initializable {
         return type(Component).interfaceId == interfaceId_;
     }
 
-    // --- Helpers ---------
+    // --- Helpers ------------------------------------------------------
 
     function toLabel(string memory typeName_) internal pure returns (bytes32) {
         return bytes32(bytes(typeName_));
@@ -114,7 +120,7 @@ abstract contract Component is Initializable {
 
 abstract contract MutableComponent is Component, UUPSUpgradeable {
 
-    function _authorizeUpgrade(address) internal override onlyKernel {
+    function _authorizeUpgrade(address) internal view override onlyKernel {
         console2.log("IN AUTH UPGRADE");
         console2.log("kernel", address(kernel));
     }
@@ -203,18 +209,18 @@ contract Kernel {
     }
 
     function _installComponent(address target_, bytes memory data_) internal verifyComponent(target_) {
+        bytes32 label = Component(target_).LABEL();
+        console2.logBytes32(label);
+
+        if (isComponentInstalled(label)) revert Kernel_ComponentAlreadyInstalled();
+        if (label == "") revert Kernel_InvalidConfig();
+
         // If component is mutable, deploy its proxy and use that address as the install target
         // Else, use the target argument as a regular component
         Component component = Component(target_).isMutable()
             ? MutableComponent(LibClone.deployERC1967(target_))
             : Component(target_);
 
-        console2.log("STEP 0");
-
-        bytes32 label = component.LABEL();
-
-        if (isComponentInstalled(label)) revert Kernel_ComponentAlreadyInstalled();
-        if (label == "") revert Kernel_InvalidConfig();
 
         // Initialize component to set kernel and pass init data
         component.initializeComponent(address(this), data_);
@@ -249,7 +255,7 @@ contract Kernel {
         if (MutableComponent(newImpl_).VERSION() <= componentProxy.VERSION()) revert Kernel_InvalidConfig();
 
         // Remove all permissions for old implementation
-        Component.Dependency[] memory deps = componentProxy.CONFIG();
+        Component.Dependency[] memory deps = componentProxy.configureDependencies();
         for (uint256 i; i < deps.length; ++i) {
             Component dependency = getComponentForLabel[deps[i].label];
             dependency.setPermissions(componentProxy, deps[i].funcSelectors, false);
@@ -286,7 +292,7 @@ contract Kernel {
         if (numDependents > 0) revert Kernel_ComponentHasDependents(numDependents);
 
         // Remove all permissions
-        Component.Dependency[] memory deps = component.CONFIG();
+        Component.Dependency[] memory deps = component.configureDependencies();
 
         for (uint256 i; i < deps.length; ++i) {
             Component dependency = getComponentForLabel[deps[i].label];
@@ -300,10 +306,10 @@ contract Kernel {
         emit ActionExecuted(Actions.UNINSTALL, target_);
     }
 
-    function _runScript(bytes memory scriptData) internal {
-        (ComponentCall[] memory calls) = abi.decode(scriptData, (ComponentCall[]));
+    function _runScript(bytes memory scriptData_) internal {
+        (ComponentCall[] memory calls) = abi.decode(scriptData_, (ComponentCall[]));
 
-        for (uint i = 0; i < calls.length; i++) {
+        for (uint256 i; i < calls.length; i++) {
             Component component = getComponentForLabel[calls[i].componentLabel];
             if (address(component) == address(0)) revert Kernel_ComponentNotFound();
 
@@ -335,7 +341,7 @@ contract Kernel {
     function _addDependencies(Component component_) internal {
         console2.log("component addr", address(component_));
         uint256 id = getIdForLabel[component_.LABEL()];
-        Component.Dependency[] memory deps = component_.CONFIG();
+        Component.Dependency[] memory deps = component_.configureDependencies();
 
         for (uint256 i; i < deps.length; ++i) {
             uint256 depId = getIdForLabel[deps[i].label];
@@ -370,7 +376,7 @@ contract Kernel {
                 visited[currentId] = true;
 
                 // Process the current node
-                getComponentForLabel[componentGraph.getNode(currentId).data].CONFIG();
+                getComponentForLabel[componentGraph.getNode(currentId).data].configureDependencies();
 
                 // Push all unvisited incoming neighbors to the stack
                 uint256[] memory incomingEdges = componentGraph.getIncomingEdges(currentId);
