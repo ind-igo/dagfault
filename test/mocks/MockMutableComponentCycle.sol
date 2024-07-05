@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
-import { Kernel, Component, MutableComponent } from "src/Kernel.sol";
+import { Kernel, Component, MutableComponent } from "src/Dagfault.sol";
 
 contract MockCycleComponentA_V1 is MutableComponent {
     Component.Dependency[] public dependencies;

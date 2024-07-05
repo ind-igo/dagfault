@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 
-import { Kernel, Component, MutableComponent } from "src/Kernel.sol";
+import { Kernel, Component, MutableComponent } from "src/Dagfault.sol";
 import {LibDAG} from "src/LibDAG.sol";
 import "test/mocks/MockComponentGen.sol";
 import "test/mocks/MockComponent1.sol";
@@ -15,14 +15,7 @@ import {MockCycleComponentA_V1, MockCycleComponentB_V1, MockCycleComponentA_V2} 
 
 import {console2} from "forge-std/console2.sol";
 
-/*
-todo tests:
-- upgrade
-- upgrade with perms and deps
-- upgrade with re-init
-- upgrade with cycle (fail)
-*/
-contract KernelTest is Test {
+contract DagfaultTest is Test {
     Kernel kernel;
     MockComponent1 component1;
     MockComponent2 component2;

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { MutableComponent } from "src/Kernel.sol";
+import { MutableComponent } from "src/Dagfault.sol";
 import { MockComponent1 } from "./MockComponent1.sol";
 import { console2 } from "forge-std/console2.sol";
 

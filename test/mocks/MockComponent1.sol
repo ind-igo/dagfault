@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { Component } from "src/Kernel.sol";
+import { Component } from "src/Dagfault.sol";
 
 contract MockComponent1 is Component {
 
