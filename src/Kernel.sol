@@ -55,7 +55,7 @@ abstract contract Component is Initializable {
 
     // --- Kernel API ------------------------------------------------------
 
-    // Initializer for setting kernel and calling custom initialization logic.
+    // Initializer for setting kernel and calling custom INIT logic.
     // Called by kernel when installing/upgrading a component.
     function initializeComponent(address kernel_, bytes memory data_)
         external
@@ -120,10 +120,7 @@ abstract contract Component is Initializable {
 
 abstract contract MutableComponent is Component, UUPSUpgradeable {
 
-    function _authorizeUpgrade(address) internal view override onlyKernel {
-        console2.log("IN AUTH UPGRADE");
-        console2.log("kernel", address(kernel));
-    }
+    function _authorizeUpgrade(address) internal view override onlyKernel {}
 
     function isMutable() external pure override returns (bool) {
         return true;
@@ -147,8 +144,8 @@ contract Kernel {
         UPGRADE,
         UNINSTALL,
         RUN_SCRIPT,
-        CHANGE_EXEC,
-        MIGRATE
+        ADD_EXEC,
+        REMOVE_EXEC
     }
 
     /// @notice Used by executor to select an action and a target contract for a kernel action
@@ -163,7 +160,8 @@ contract Kernel {
         bytes callData;
     }
 
-    address public executor;
+    // address public executor; // TODO
+    mapping(address => bool) public executors;
 
     LibDAG.DAG private componentGraph;
     mapping(bytes32 => Component) public getComponentForLabel;
@@ -179,9 +177,11 @@ contract Kernel {
     error Kernel_ComponentHasDependents(uint256 numDependents);
     error Kernel_InvalidConfig();
     error Kernel_EndpointAlreadyExists();
+    error Kernel_InvalidAddress();
+    error Kernel_CannotRemoveSelf();
 
     constructor() {
-        _changeExecutor(msg.sender);
+        _addExecutor(msg.sender);
     }
 
     modifier verifyComponent(address target_) {
@@ -193,16 +193,16 @@ contract Kernel {
         return componentGraph.getNode(getIdForLabel[label_]).exists;
     }
 
-    // TODO think about allowing other contracts to install components. ie, a factory
     function executeAction(Actions action_, address target_, bytes memory data_) external {
-        // Only Executor can execute actions
-        require(msg.sender == executor);
+        // Only executors can execute actions
+        if (!executors[msg.sender]) revert Kernel_InvalidAddress();
 
         if (action_ == Actions.INSTALL)          _installComponent(target_, data_);
         else if (action_ == Actions.UPGRADE)     _upgradeComponent(target_, data_);
         else if (action_ == Actions.UNINSTALL)   _uninstallComponent(target_);
         else if (action_ == Actions.RUN_SCRIPT)  _runScript(data_);
-        else if (action_ == Actions.CHANGE_EXEC) _changeExecutor(target_);
+        else if (action_ == Actions.ADD_EXEC)    _addExecutor(target_);
+        else if (action_ == Actions.REMOVE_EXEC) _removeExecutor(target_);
         //else if (action_ == Actions.MIGRATE)     _migrateKernel(Kernel(target_));
 
         emit ActionExecuted(action_, target_);
@@ -325,12 +325,15 @@ contract Kernel {
         }
     }
 
-    function _changeExecutor(address target_) internal {
-        executor = target_;
+    function _addExecutor(address newExecutor_) internal {
+        if (newExecutor_ == address(0)) revert Kernel_InvalidAddress();
+        executors[newExecutor_] = true;
     }
 
-    function _migrateKernel(address target_) internal {
-        // TODO traverse graph and call changeKernel on all components from bottom up
+    function _removeExecutor(address executor_) internal {
+        if (!executors[executor_]) revert Kernel_InvalidAddress();
+        if (msg.sender == executor_) revert Kernel_CannotRemoveSelf();
+        executors[executor_] = false;
     }
 
     // === HELPER FUNCTIONS ======================================================

@@ -5,7 +5,7 @@ library LibDAG {
     struct Node {
         uint256[] outgoingEdges;
         uint256[] incomingEdges;
-        bytes32 data;  // Generic data field, can be used to store any 32-byte information
+        bytes32 data; // Generic data field, can be used to store any 32-byte information
         bool exists;
     }
 
@@ -78,7 +78,7 @@ library LibDAG {
 
         bool[] memory visited = new bool[](self.nodeCount + 1);
         uint256[] memory stack = new uint256[](self.nodeCount);
-        uint256 stackSize = 0;
+        uint256 stackSize;
 
         stack[stackSize++] = to;
 
@@ -91,7 +91,7 @@ library LibDAG {
                 visited[current] = true;
 
                 uint256[] storage neighbors = self.nodes[current].outgoingEdges;
-                for (uint256 i = 0; i < neighbors.length; i++) {
+                for (uint256 i; i < neighbors.length; i++) {
                     if (!visited[neighbors[i]]) {
                         stack[stackSize++] = neighbors[i];
                     }

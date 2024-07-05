@@ -29,6 +29,9 @@ contract KernelTest is Test {
     MockComponent2 component2;
     MockComponent3 component3;
 
+    address executor1 = address(0x101);
+    address executor2 = address(0x420);
+
     function setUp() public {
         kernel = new Kernel();
         component1 = new MockComponent1();
@@ -191,10 +194,38 @@ contract KernelTest is Test {
         kernel.executeAction(Kernel.Actions.UNINSTALL, address(component1), "");
     }
 
-    function test_ChangeExecutor() public {
-        address newExecutor = address(0x1234);
-        kernel.executeAction(Kernel.Actions.CHANGE_EXEC, newExecutor, "");
+    function test_InitialExecutor() public {
+        assertTrue(kernel.executors(address(this)));
+    }
 
-        assertEq(kernel.executor(), newExecutor);
+    function test_AddExecutor() public {
+        kernel.executeAction(Kernel.Actions.ADD_EXEC, executor1, "");
+        
+        assertTrue(kernel.executors(executor1));
+    }
+
+    function test_RemoveExecutor() public {
+        kernel.executeAction(Kernel.Actions.ADD_EXEC, executor1, "");
+        kernel.executeAction(Kernel.Actions.REMOVE_EXEC, executor1, "");
+
+        assertFalse(kernel.executors(executor1));
+    }
+
+    function testFail_NonExecutorCannotExecuteAction() public {
+        vm.prank(executor1);
+        kernel.executeAction(Kernel.Actions.ADD_EXEC, executor2, "");
+    }
+
+    function test_MultipleExecutorsCanExecuteActions() public {
+        kernel.executeAction(Kernel.Actions.ADD_EXEC, executor1, "");
+
+        vm.prank(executor1);
+        kernel.executeAction(Kernel.Actions.ADD_EXEC, executor2, "");
+
+        assertTrue(kernel.executors(executor2));
+    }
+
+    function testFail_ExecutorCannotRemoveSelf() public {
+        kernel.executeAction(Kernel.Actions.REMOVE_EXEC, address(this), "");
     }
 }
