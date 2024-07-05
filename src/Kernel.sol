@@ -3,11 +3,8 @@ pragma solidity ^0.8.24;
 
 import { UUPSUpgradeable } from "solady/src/utils/UUPSUpgradeable.sol";
 import { Initializable } from "solady/src/utils/Initializable.sol";
-import { LibString } from "solady/src/utils/LibString.sol";
 import { LibClone } from "solady/src/utils/LibClone.sol";
 import { LibDAG } from "./LibDAG.sol";
-
-import { console2 } from "forge-std/console2.sol";
 
 abstract contract Component is Initializable {
     struct Dependency {
@@ -61,7 +58,6 @@ abstract contract Component is Initializable {
         external
         reinitializer(VERSION())
     {
-        console2.log("INITIALIZING COMPONENT");
         kernel = Kernel(kernel_);
         INIT(data_);
     }
@@ -84,12 +80,6 @@ abstract contract Component is Initializable {
         }
     }
 
-    // TODO
-    /// @notice Function used by kernel when migrating to a new kernel.
-    function changeKernel(Kernel newKernel_) external onlyKernel {
-        kernel = newKernel_;
-    }
-
     // --- Query Functions ---------------------------------------------
 
     // Return if the component is installed in the kernel
@@ -102,7 +92,6 @@ abstract contract Component is Initializable {
     }
 
     // ERC-165. Used by Kernel to check if a component is installable.
-    // TODO might need to be virtual, so it can be overridden by mutable components
     function supportsInterface(bytes4 interfaceId_) external pure virtual returns (bool) {
         return type(Component).interfaceId == interfaceId_;
     }
@@ -160,7 +149,6 @@ contract Kernel {
         bytes callData;
     }
 
-    // address public executor; // TODO
     mapping(address => bool) public executors;
 
     LibDAG.DAG private componentGraph;
@@ -203,14 +191,12 @@ contract Kernel {
         else if (action_ == Actions.RUN_SCRIPT)  _runScript(data_);
         else if (action_ == Actions.ADD_EXEC)    _addExecutor(target_);
         else if (action_ == Actions.REMOVE_EXEC) _removeExecutor(target_);
-        //else if (action_ == Actions.MIGRATE)     _migrateKernel(Kernel(target_));
 
         emit ActionExecuted(action_, target_);
     }
 
     function _installComponent(address target_, bytes memory data_) internal verifyComponent(target_) {
         bytes32 label = Component(target_).LABEL();
-        console2.logBytes32(label);
 
         if (isComponentInstalled(label)) revert Kernel_ComponentAlreadyInstalled();
         if (label == "") revert Kernel_InvalidConfig();
@@ -225,14 +211,10 @@ contract Kernel {
         // Initialize component to set kernel and pass init data
         component.initializeComponent(address(this), data_);
 
-        console2.log("STEP 1");
-
         // Add node to graph and mappings
         uint256 id = componentGraph.addNode(label);
         getComponentForLabel[label] = component;
         getIdForLabel[label] = id;
-
-        console2.log("STEP 2");
 
         // Add all read and write dependencies
         _addDependencies(component);
@@ -342,7 +324,6 @@ contract Kernel {
     // NOTE: This can only add new dependencies. Will also SKIP existing ones.
     //       This means it will NOT revert if a component has duplicate dependencies.
     function _addDependencies(Component component_) internal {
-        console2.log("component addr", address(component_));
         uint256 id = getIdForLabel[component_.LABEL()];
         Component.Dependency[] memory deps = component_.configureDependencies();
 
@@ -352,7 +333,6 @@ contract Kernel {
             // If dependency exists, skip
             if (componentGraph.hasEdge(id, depId)) continue;
 
-            console2.log("HERE");
             // Check for new dependencies and add permissions as needed
             componentGraph.addEdge(id, depId);
 
@@ -368,7 +348,7 @@ contract Kernel {
 
         bool[] memory visited = new bool[](componentGraph.nodeCount + 1);
         uint256[] memory stack = new uint256[](componentGraph.nodeCount);
-        uint256 stackSize = 0;
+        uint256 stackSize;
 
         stack[stackSize++] = startId;
 
@@ -402,19 +382,19 @@ contract Kernel {
     ) {
         uint256 id = getIdForLabel[label];
         LibDAG.Node memory node = componentGraph.getNode(id);
-        require(node.exists, "Component does not exist");
+        if(!node.exists) revert Kernel_ComponentNotFound();
 
         componentAddress = address(getComponentForLabel[label]);
 
         // Convert dependency (outgoing) edges to labels
         dependencyLabels = new bytes32[](node.outgoingEdges.length);
-        for (uint256 i = 0; i < node.outgoingEdges.length; i++) {
+        for (uint256 i; i < node.outgoingEdges.length; i++) {
             dependencyLabels[i] = bytes32(componentGraph.getNode(node.outgoingEdges[i]).data);
         }
 
         // Convert dependent (incoming) edges to labels
         dependentLabels = new bytes32[](node.incomingEdges.length);
-        for (uint256 i = 0; i < node.incomingEdges.length; i++) {
+        for (uint256 i; i < node.incomingEdges.length; i++) {
             dependentLabels[i] = bytes32(componentGraph.getNode(node.incomingEdges[i]).data);
         }
     }

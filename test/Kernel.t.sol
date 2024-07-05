@@ -6,7 +6,6 @@ import "forge-std/Test.sol";
 import { Kernel, Component, MutableComponent } from "src/Kernel.sol";
 import {LibDAG} from "src/LibDAG.sol";
 import "test/mocks/MockComponentGen.sol";
-// import "test/mocks/MockMutableComponentGen.sol";
 import "test/mocks/MockComponent1.sol";
 import "test/mocks/MockComponent2.sol";
 import "test/mocks/MockComponent3.sol";
@@ -103,14 +102,10 @@ contract KernelTest is Test {
         assertEq(address(kernel.getComponentForLabel(readOnly.LABEL())), address(readOnly));
     }
 
-    // TODO this test fails but not sure why
     function testRevert_Install_NotComponent() public {
         vm.expectRevert();
         kernel.executeAction(Kernel.Actions.INSTALL, address(0x1234), bytes(""));
     }
-
-    // TODO
-    // function testRevert_Install_WithCycle() public {}
 
     function testRevert_Install_AlreadyExists() public afterInstallMockComp1 {
         vm.expectRevert(Kernel.Kernel_ComponentAlreadyInstalled.selector);
@@ -118,9 +113,6 @@ contract KernelTest is Test {
     }
 
     function test_Upgrade() public afterInstallMockComp1 {
-        // Create initial mutable component
-        // Component.Dependency[] memory initialDeps = new Component.Dependency[](1);
-
         MockMutableV1 initialComponent = new MockMutableV1();
         bytes32 label = initialComponent.LABEL();
 
