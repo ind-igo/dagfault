@@ -57,14 +57,14 @@ library LibDAG {
         if (!self.nodes[id].exists) revert NodeDoesNotExist(id);
 
         // Remove all outgoing edges
-        for (uint256 i = 0; i < self.nodes[id].outgoingEdges.length; i++) {
+        for (uint256 i; i < self.nodes[id].outgoingEdges.length; i++) {
             uint256 to = self.nodes[id].outgoingEdges[i];
             self.edges[id][to] = false;
             removeFromArray(self.nodes[to].incomingEdges, id);
         }
 
         // Remove all incoming edges
-        for (uint256 i = 0; i < self.nodes[id].incomingEdges.length; i++) {
+        for (uint256 i; i < self.nodes[id].incomingEdges.length; i++) {
             uint256 from = self.nodes[id].incomingEdges[i];
             self.edges[from][id] = false;
             removeFromArray(self.nodes[from].outgoingEdges, id);
@@ -133,7 +133,7 @@ library LibDAG {
     }
 
     function removeFromArray(uint256[] storage array, uint256 value) private {
-        for (uint256 i = 0; i < array.length; i++) {
+        for (uint256 i; i < array.length; i++) {
             if (array[i] == value) {
                 array[i] = array[array.length - 1];
                 array.pop();
