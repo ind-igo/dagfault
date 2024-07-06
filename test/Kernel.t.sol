@@ -179,7 +179,7 @@ contract DagfaultTest is Test {
         kernel.executeAction(Kernel.Actions.UNINSTALL, address(component1), "");
     }
 
-    function test_InitialExecutor() public {
+    function test_InitialExecutor() public view {
         assertTrue(kernel.executors(address(this)));
     }
 

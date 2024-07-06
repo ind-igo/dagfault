@@ -32,7 +32,7 @@ contract MockMutableComponent2 is MutableComponent {
         return deps;
     }
 
-    function INIT(bytes memory) internal override {
+    function INIT(bytes memory) internal pure override {
         console2.log("init v1");
     }
 

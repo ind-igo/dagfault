@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { UUPSUpgradeable } from "solady/src/utils/UUPSUpgradeable.sol";
-import { Initializable } from "solady/src/utils/Initializable.sol";
-import { LibClone } from "solady/src/utils/LibClone.sol";
+import { UUPSUpgradeable, Initializable, LibClone } from "solady/src/Milady.sol";
 import { LibDAG } from "./LibDAG.sol";
 
 abstract contract Component is Initializable {
