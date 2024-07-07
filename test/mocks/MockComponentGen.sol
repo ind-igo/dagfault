@@ -5,11 +5,11 @@ import { Kernel, Component } from "src/Dagfault.sol";
 
 contract MockComponentGen is Component {
     bytes32 public label;
-    Dependency[] public deps;
+    Permissions[] public deps;
 
     constructor(
         bytes32 label_,
-        Dependency[] memory deps_
+        Permissions[] memory deps_
     ) {
         label = label_;
 
@@ -22,7 +22,7 @@ contract MockComponentGen is Component {
         return label;
     }
 
-    function CONFIG() internal view override returns (Dependency[] memory) {
+    function CONFIG() internal view override returns (Permissions[] memory) {
         return deps;
     }
 

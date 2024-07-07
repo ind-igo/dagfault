@@ -5,7 +5,7 @@ import "forge-std/Test.sol";
 import { Kernel, Component, MutableComponent } from "src/Dagfault.sol";
 
 contract MockCycleComponentA_V1 is MutableComponent {
-    Component.Dependency[] public dependencies;
+    Component.Permissions[] public dependencies;
 
     function LABEL() public pure override returns (bytes32) {
         return bytes32("CycleComponentA");
@@ -15,13 +15,13 @@ contract MockCycleComponentA_V1 is MutableComponent {
         return 1;
     }
 
-    function CONFIG() internal view override returns (Dependency[] memory) {
+    function CONFIG() internal view override returns (Permissions[] memory) {
         return dependencies;
     }
 
     function INIT(bytes memory) internal override {}
 
-    function setDependencies(Component.Dependency[] memory deps_) public {
+    function setDependencies(Component.Permissions[] memory deps_) public {
         for (uint256 i; i < deps_.length; i++) {
             dependencies.push(deps_[i]);
         }
@@ -31,7 +31,7 @@ contract MockCycleComponentA_V1 is MutableComponent {
 }
 
 contract MockCycleComponentB_V1 is MutableComponent {
-    Component.Dependency[] public dependencies;
+    Component.Permissions[] public dependencies;
 
     function LABEL() public pure override returns (bytes32) {
         return bytes32("CycleComponentB");
@@ -41,9 +41,9 @@ contract MockCycleComponentB_V1 is MutableComponent {
         return 1;
     }
 
-    function CONFIG() internal pure override returns (Dependency[] memory) {
-        Component.Dependency[] memory depsB = new Component.Dependency[](1);
-        depsB[0] = Component.Dependency({
+    function CONFIG() internal pure override returns (Permissions[] memory) {
+        Component.Permissions[] memory depsB = new Component.Permissions[](1);
+        depsB[0] = Component.Permissions({
             label: bytes32("CycleComponentA"),
             funcSelectors: new bytes4[](1)
         });
@@ -57,7 +57,7 @@ contract MockCycleComponentB_V1 is MutableComponent {
 }
 
 contract MockCycleComponentA_V2 is MutableComponent {
-    Component.Dependency[] public dependencies;
+    Component.Permissions[] public dependencies;
 
     function LABEL() public pure override returns (bytes32) {
         return bytes32("CycleComponentA");
@@ -67,10 +67,10 @@ contract MockCycleComponentA_V2 is MutableComponent {
         return 2;
     }
 
-    function CONFIG() internal pure override returns (Dependency[] memory) {
+    function CONFIG() internal pure override returns (Permissions[] memory) {
         // return dependencies;
-        Component.Dependency[] memory newDepsA = new Component.Dependency[](1);
-        newDepsA[0] = Component.Dependency({
+        Component.Permissions[] memory newDepsA = new Component.Permissions[](1);
+        newDepsA[0] = Component.Permissions({
             label: bytes32("CycleComponentB"),
             funcSelectors: new bytes4[](1)
         });

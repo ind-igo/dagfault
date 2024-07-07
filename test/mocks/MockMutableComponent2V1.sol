@@ -19,8 +19,8 @@ contract MockMutableComponent2 is MutableComponent {
         return toLabel(type(MockMutableComponent2).name);
     }
 
-    function CONFIG() internal override returns (Dependency[] memory) {
-        Dependency[] memory deps = new Dependency[](1);
+    function CONFIG() internal override returns (Permissions[] memory) {
+        Permissions[] memory deps = new Permissions[](1);
 
         deps[0].label = toLabel(type(MockComponent1).name);
         deps[0].funcSelectors = new bytes4[](1);

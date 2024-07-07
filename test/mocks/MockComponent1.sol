@@ -9,7 +9,7 @@ contract MockComponent1 is Component {
         return toLabel(type(MockComponent1).name);
     }
 
-    function CONFIG() internal pure override returns (Dependency[] memory deps) {}
+    function CONFIG() internal pure override returns (Permissions[] memory deps) {}
 
     function INIT(bytes memory) internal pure override {
         // Mock initialization logic

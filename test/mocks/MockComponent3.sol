@@ -24,8 +24,8 @@ contract MockComponent3 is Component {
         (data1, data2) = abi.decode(data_, (address, bytes32));
     }
 
-    function CONFIG() internal override returns (Dependency[] memory deps) {
-        deps = new Dependency[](2);
+    function CONFIG() internal override returns (Permissions[] memory deps) {
+        deps = new Permissions[](2);
 
         deps[0].label = toLabel(type(MockComponent1).name);
         deps[0].funcSelectors = new bytes4[](1);

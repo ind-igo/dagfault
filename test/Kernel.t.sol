@@ -82,9 +82,9 @@ contract DagfaultTest is Test {
     }
 
     function test_Install_ReadOnlyDep() public afterInstallMockComp1 {
-        Component.Dependency[] memory readDep = new Component.Dependency[](1);
+        Component.Permissions[] memory readDep = new Component.Permissions[](1);
         bytes4[] memory funcSelectors = new bytes4[](1);
-        readDep[0] = Component.Dependency({ label: component1.LABEL(), funcSelectors: funcSelectors });
+        readDep[0] = Component.Permissions({ label: component1.LABEL(), funcSelectors: funcSelectors });
 
         // Make new component with read only dependency
         Component readOnly = new MockComponentGen("ReadOnlyDep", readDep);

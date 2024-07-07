@@ -5,7 +5,7 @@ import { UUPSUpgradeable, Initializable, LibClone } from "solady/src/Milady.sol"
 import { LibDAG } from "./LibDAG.sol";
 
 abstract contract Component is Initializable {
-    struct Dependency {
+    struct Permissions {
         bytes32 label;
         bytes4[] funcSelectors;
     }
@@ -46,7 +46,7 @@ abstract contract Component is Initializable {
 
     /// @notice Hook for defining and configuring dependencies.
     /// @return An array of dependencies for kernel to record
-    function CONFIG() internal virtual returns (Dependency[] memory);
+    function CONFIG() internal virtual returns (Permissions[] memory);
 
     // --- Kernel API ------------------------------------------------------
 
@@ -61,7 +61,7 @@ abstract contract Component is Initializable {
     }
 
     // Called by kernel to configure dependencies and return permissions needed for a component.
-    function configureDependencies() external onlyKernel returns (Dependency[] memory) {
+    function configureDependencies() external onlyKernel returns (Permissions[] memory) {
         return CONFIG();
     }
 
@@ -143,7 +143,7 @@ contract Kernel {
 
     struct ComponentCall {
         bytes32 componentLabel;
-        bytes4 functionSelector;
+        bytes4 funcSelector;
         bytes callData;
     }
 
@@ -235,10 +235,10 @@ contract Kernel {
         if (MutableComponent(newImpl_).VERSION() <= componentProxy.VERSION()) revert Kernel_InvalidConfig();
 
         // Remove all permissions for old implementation
-        Component.Dependency[] memory deps = componentProxy.configureDependencies();
+        Component.Permissions[] memory deps = componentProxy.configureDependencies();
         for (uint256 i; i < deps.length; ++i) {
-            Component dependency = getComponentForLabel[deps[i].label];
-            dependency.setPermissions(componentProxy, deps[i].funcSelectors, false);
+            Component Permissions = getComponentForLabel[deps[i].label];
+            Permissions.setPermissions(componentProxy, deps[i].funcSelectors, false);
         }
 
         // Upgrade to and initialize the new implementation
@@ -272,11 +272,11 @@ contract Kernel {
         if (numDependents > 0) revert Kernel_ComponentHasDependents(numDependents);
 
         // Remove all permissions
-        Component.Dependency[] memory deps = component.configureDependencies();
+        Component.Permissions[] memory deps = component.configureDependencies();
 
         for (uint256 i; i < deps.length; ++i) {
-            Component dependency = getComponentForLabel[deps[i].label];
-            dependency.setPermissions(component, deps[i].funcSelectors, false);
+            Component Permissions = getComponentForLabel[deps[i].label];
+            Permissions.setPermissions(component, deps[i].funcSelectors, false);
         }
 
         // Remove component node and associated edges from graph
@@ -294,7 +294,7 @@ contract Kernel {
             if (address(component) == address(0)) revert Kernel_ComponentNotFound();
 
             (bool success, bytes memory result) = address(component).call(
-                abi.encodePacked(calls[i].functionSelector, calls[i].callData)
+                abi.encodePacked(calls[i].funcSelector, calls[i].callData)
             );
 
             if (!success) {
@@ -323,20 +323,20 @@ contract Kernel {
     //       This means it will NOT revert if a component has duplicate dependencies.
     function _addDependencies(Component component_) internal {
         uint256 id = getIdForLabel[component_.LABEL()];
-        Component.Dependency[] memory deps = component_.configureDependencies();
+        Component.Permissions[] memory deps = component_.configureDependencies();
 
         for (uint256 i; i < deps.length; ++i) {
             uint256 depId = getIdForLabel[deps[i].label];
 
-            // If dependency exists, skip
+            // If Permissions exists, skip
             if (componentGraph.hasEdge(id, depId)) continue;
 
             // Check for new dependencies and add permissions as needed
             componentGraph.addEdge(id, depId);
 
             // Add permissions for any functions that need it
-            Component dependency = getComponentForLabel[deps[i].label];
-            dependency.setPermissions(component_, deps[i].funcSelectors, true);
+            Component Permissions = getComponentForLabel[deps[i].label];
+            Permissions.setPermissions(component_, deps[i].funcSelectors, true);
         }
     }
 
@@ -384,7 +384,7 @@ contract Kernel {
 
         componentAddress = address(getComponentForLabel[label]);
 
-        // Convert dependency (outgoing) edges to labels
+        // Convert Permissions (outgoing) edges to labels
         dependencyLabels = new bytes32[](node.outgoingEdges.length);
         for (uint256 i; i < node.outgoingEdges.length; i++) {
             dependencyLabels[i] = bytes32(componentGraph.getNode(node.outgoingEdges[i]).data);
