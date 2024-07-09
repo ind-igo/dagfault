@@ -1,6 +1,6 @@
 # Dagfault
 
-Dagfault is a framework for building modular and composable smart contracts, built on ideas from Default [https://github.com/fullyallocated/Default] and inspired by various dependency injection and management frameworks.
+Dagfault is a minimal framework for building modular smart contract protocols, built on ideas from [Default Framework](https://github.com/fullyallocated/Default) and inspired by various dependency injection and management frameworks.
 
 ## TLDR
 

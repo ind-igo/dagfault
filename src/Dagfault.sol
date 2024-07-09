@@ -179,7 +179,17 @@ contract Kernel {
         return componentGraph.getNode(getIdForLabel[label_]).exists;
     }
 
-    function executeAction(Actions action_, address target_, bytes memory data_) external {
+    // TODO
+    function batchExecuteActions(Actions[] memory actions_, address[] memory targets_, bytes[] memory data_) external {
+        // Only executors can execute actions
+        if (!executors[msg.sender]) revert Kernel_InvalidAddress();
+
+        for (uint256 i; i < actions_.length; i++) {
+            executeAction(actions_[i], targets_[i], data_[i]);
+        }
+    }
+
+    function executeAction(Actions action_, address target_, bytes memory data_) public {
         // Only executors can execute actions
         if (!executors[msg.sender]) revert Kernel_InvalidAddress();
 
